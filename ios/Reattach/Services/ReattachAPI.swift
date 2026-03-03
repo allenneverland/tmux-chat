@@ -34,7 +34,7 @@ enum APIError: LocalizedError {
             case .cloudflareExpired:
                 return "Session expired - please sign in again"
             case .deviceTokenInvalid:
-                return "Device not registered - please scan QR code again"
+                return "Device credentials invalid - please re-add this server"
             }
         }
     }

@@ -9,7 +9,7 @@ struct ServerListView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var configManager = ServerConfigManager.shared
     @State private var purchaseManager = PurchaseManager.shared
-    @State private var showQRScanner = false
+    @State private var showManualSetup = false
     @State private var showUpgrade = false
     @State private var serverCountOnOpen = 0
 
@@ -35,8 +35,8 @@ struct ServerListView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showQRScanner) {
-                QRScannerView()
+            .sheet(isPresented: $showManualSetup) {
+                ManualServerSetupView()
                     .onDisappear {
                         if configManager.servers.count > serverCountOnOpen {
                             dismiss()
@@ -137,7 +137,7 @@ struct ServerListView: View {
             Button {
                 if configManager.canAddServer {
                     serverCountOnOpen = configManager.servers.count
-                    showQRScanner = true
+                    showManualSetup = true
                 } else {
                     showUpgrade = true
                 }

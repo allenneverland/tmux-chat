@@ -209,13 +209,16 @@ tmux new-session -s myproject -c ~/projects/myproject
 
 ### Register your device
 
-Generate a QR code to register your iOS device. Use the URL from your network configuration above:
+Issue a device credential JSON from your host:
 
 ```bash
-reattachd setup --url <your-url>
+reattachd devices issue --name "<your-device-name>" --json
 ```
 
-Scan the QR code with the Reattach iOS app to complete registration.
+Open the iOS app and add the server manually with:
+- Server URL
+- `device_id`
+- `device_token`
 
 ### Control from iOS
 
@@ -336,7 +339,7 @@ For remote access, use Cloudflare Tunnel (connects to localhost) or explicitly s
 ### Authentication
 
 reattachd includes device-based authentication:
-- Devices must be registered via QR code (setup token)
+- Devices must be issued via `reattachd devices issue`
 - Each device receives a unique token for API access
 - Unregistered devices cannot access the API
 

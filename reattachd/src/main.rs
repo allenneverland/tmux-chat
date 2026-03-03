@@ -14,6 +14,7 @@ use axum::{
     Router,
 };
 use clap::{Parser, Subcommand};
+use serde::Serialize;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const DEFAULT_PORT: u16 = 8787;
@@ -32,18 +33,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start setup mode to register a new device
-    Setup {
-        /// External URL for the server (e.g., https://your-server.example.com)
-        #[arg(long)]
-        url: String,
-        /// Create a reusable token that can be used multiple times
-        #[arg(long)]
-        reusable: bool,
-        /// Token expiration time (e.g., 10m, 1h, 1d, never). Default: 10m
-        #[arg(long, default_value = "10m")]
-        expires: String,
-    },
     /// Manage registered devices
     Devices {
         #[command(subcommand)]
@@ -83,11 +72,27 @@ enum Commands {
 enum DeviceAction {
     /// List all registered devices
     List,
+    /// Issue a new device token
+    Issue {
+        /// Device name (e.g. "Allen's iPhone")
+        #[arg(long)]
+        name: String,
+        /// Output machine-readable JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Revoke a device by ID
     Revoke {
         /// Device ID to revoke
         id: String,
     },
+}
+
+#[derive(Serialize)]
+struct IssuedDeviceJson {
+    device_id: String,
+    device_name: String,
+    device_token: String,
 }
 
 #[derive(Subcommand)]
@@ -123,9 +128,6 @@ async fn main() {
     let data_dir = get_data_dir();
 
     match cli.command {
-        Some(Commands::Setup { url, reusable, expires }) => {
-            run_setup_mode(data_dir, url, reusable, expires).await;
-        }
         Some(Commands::Devices { action }) => {
             run_device_command(data_dir, action).await;
         }
@@ -157,74 +159,38 @@ async fn main() {
     }
 }
 
-fn parse_duration(s: &str) -> Option<chrono::Duration> {
-    if s == "never" {
-        return Some(chrono::Duration::days(365 * 100));
-    }
-
-    let s = s.trim();
-    if s.is_empty() {
-        return None;
-    }
-
-    let (num_str, unit) = s.split_at(s.len() - 1);
-    let num: i64 = num_str.parse().ok()?;
-
-    match unit {
-        "m" => Some(chrono::Duration::minutes(num)),
-        "h" => Some(chrono::Duration::hours(num)),
-        "d" => Some(chrono::Duration::days(num)),
-        _ => None,
-    }
-}
-
-async fn run_setup_mode(data_dir: std::path::PathBuf, url: String, reusable: bool, expires: String) {
-    let duration = parse_duration(&expires).unwrap_or_else(|| {
-        eprintln!("Invalid expiration format: {}. Using default 10m.", expires);
-        chrono::Duration::minutes(10)
-    });
-
-    let auth_service = AuthService::new(data_dir.clone())
-        .await
-        .expect("Failed to initialize auth service");
-
-    let setup_token = auth_service.generate_setup_token(reusable, duration).await;
-
-    // Create setup URL with token
-    let setup_url = format!("{}?setup_token={}", url, setup_token);
-
-    // Generate QR code
-    use qrcode::QrCode;
-    let code = QrCode::new(&setup_url).expect("Failed to generate QR code");
-    let qr_string = code
-        .render::<char>()
-        .quiet_zone(false)
-        .module_dimensions(2, 1)
-        .build();
-
-    println!("\n  Scan this QR code with the Reattach iOS app:\n");
-    println!("{}", qr_string);
-    println!("\n  URL: {}", setup_url);
-
-    let mut notes = vec![];
-    if reusable {
-        notes.push("reusable".to_string());
-    }
-    if expires == "never" {
-        notes.push("no expiration".to_string());
-    } else {
-        notes.push(format!("expires in {}", expires));
-    }
-    println!("\n  Token: {}", notes.join(", "));
-    println!("  Make sure reattachd daemon is running.\n");
-}
-
 async fn run_device_command(data_dir: std::path::PathBuf, action: Option<DeviceAction>) {
     let auth_service = AuthService::new(data_dir)
         .await
         .expect("Failed to initialize auth service");
 
     match action {
+        Some(DeviceAction::Issue { name, json }) => {
+            if name.trim().is_empty() {
+                eprintln!("Device name cannot be empty.");
+                std::process::exit(2);
+            }
+
+            let device = auth_service.issue_device(&name).await;
+            if json {
+                let payload = IssuedDeviceJson {
+                    device_id: device.id,
+                    device_name: device.name,
+                    device_token: device.token,
+                };
+                println!("{}", serde_json::to_string(&payload).unwrap());
+            } else {
+                println!("Issued device token:");
+                println!("  Device ID:    {}", device.id);
+                println!("  Device Name:  {}", device.name);
+                println!("  Device Token: {}", device.token);
+                println!();
+                println!("Add this server in iOS with:");
+                println!("  - Server URL");
+                println!("  - Device ID");
+                println!("  - Device Token");
+            }
+        }
         Some(DeviceAction::Revoke { id }) => {
             if auth_service.revoke_device(&id).await {
                 println!("Device {} revoked successfully", id);
@@ -236,7 +202,7 @@ async fn run_device_command(data_dir: std::path::PathBuf, action: Option<DeviceA
             let devices = auth_service.list_devices().await;
             if devices.is_empty() {
                 println!("No registered devices");
-                println!("\nRun 'reattachd setup --url <URL>' to register a device");
+                println!("\nRun 'reattachd devices issue --name <DEVICE_NAME> --json' to issue a device token");
             } else {
                 println!("Registered devices:\n");
                 for device in devices {
@@ -772,7 +738,9 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
     let auth_service = Arc::new(auth_service);
 
     if !auth_service.has_devices().await {
-        tracing::warn!("No devices registered. Run 'reattachd setup --url <URL>' to register a device.");
+        tracing::warn!(
+            "No devices registered. Run 'reattachd devices issue --name <DEVICE_NAME> --json' to issue a device token."
+        );
     }
 
     let push_server_base_url = std::env::var("PUSH_SERVER_BASE_URL")
@@ -803,16 +771,11 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
             auth_middleware,
         ));
 
-    // Registration endpoint (no auth required)
-    let register_routes = Router::new()
-        .route("/register", post(api::register_with_setup_token))
-        .with_state(auth_service.clone());
-
     let notify_route = Router::new()
         .route("/notify", post(api::send_notification))
         .with_state(notify_forwarder);
 
-    let app = base_routes.merge(notify_route).merge(register_routes);
+    let app = base_routes.merge(notify_route);
 
     let port = std::env::var("REATTACHD_PORT")
         .or_else(|_| std::env::var("PORT"))

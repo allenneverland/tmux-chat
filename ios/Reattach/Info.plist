@@ -6,8 +6,6 @@
 	<false/>
 	<key>PushServerBaseURL</key>
 	<string>$(PUSH_SERVER_BASE_URL)</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Camera access is needed to scan the QR code from reattachd setup</string>
 	<key>kMDItemKeywords</key>
 	<array>
 		<string>tmux</string>

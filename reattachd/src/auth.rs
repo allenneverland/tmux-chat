@@ -14,30 +14,9 @@ pub struct Device {
     pub last_seen_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SetupToken {
-    pub token: String,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
-    #[serde(default)]
-    pub used: bool,
-    #[serde(default)]
-    pub reusable: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthStore {
     pub devices: Vec<Device>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub setup_token: Option<SetupToken>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SetupTokenValidation {
-    Valid,
-    Invalid,
-    Expired,
-    AlreadyUsed,
 }
 
 pub struct AuthService {
@@ -70,69 +49,7 @@ impl AuthService {
         Ok(())
     }
 
-    pub async fn generate_setup_token(&self, reusable: bool, duration: chrono::Duration) -> String {
-        let token = generate_token();
-        let now = Utc::now();
-        let expires_at = now + duration;
-
-        let setup_token = SetupToken {
-            token: token.clone(),
-            created_at: now,
-            expires_at,
-            used: false,
-            reusable,
-        };
-
-        {
-            let mut store = self.store.write().await;
-            store.setup_token = Some(setup_token);
-        }
-
-        let _ = self.save().await;
-        token
-    }
-
-    pub async fn validate_setup_token(&self, token: &str) -> SetupTokenValidation {
-        // Reload from disk to pick up setup tokens created by `reattachd setup`
-        self.reload().await;
-
-        let store = self.store.read().await;
-        if let Some(setup_token) = &store.setup_token {
-            if setup_token.token != token {
-                SetupTokenValidation::Invalid
-            } else if setup_token.used && !setup_token.reusable {
-                SetupTokenValidation::AlreadyUsed
-            } else if Utc::now() >= setup_token.expires_at {
-                SetupTokenValidation::Expired
-            } else {
-                SetupTokenValidation::Valid
-            }
-        } else {
-            SetupTokenValidation::Invalid
-        }
-    }
-
-    async fn reload(&self) {
-        if self.data_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&self.data_path) {
-                if let Ok(new_store) = serde_json::from_str::<AuthStore>(&content) {
-                    let mut store = self.store.write().await;
-                    *store = new_store;
-                }
-            }
-        }
-    }
-
-    pub async fn register_device(
-        &self,
-        setup_token: &str,
-        device_name: &str,
-    ) -> Result<Device, SetupTokenValidation> {
-        match self.validate_setup_token(setup_token).await {
-            SetupTokenValidation::Valid => {}
-            other => return Err(other),
-        }
-
+    pub async fn issue_device(&self, device_name: &str) -> Device {
         let device = Device {
             id: uuid::Uuid::new_v4().to_string(),
             name: device_name.to_string(),
@@ -144,15 +61,10 @@ impl AuthService {
         {
             let mut store = self.store.write().await;
             store.devices.push(device.clone());
-            if let Some(ref mut setup_token) = store.setup_token {
-                if !setup_token.reusable {
-                    setup_token.used = true;
-                }
-            }
         }
 
         let _ = self.save().await;
-        Ok(device)
+        device
     }
 
     pub async fn validate_device_token(&self, token: &str) -> Option<Device> {
@@ -202,3 +114,47 @@ fn generate_token() -> String {
 }
 
 pub type SharedAuthService = Arc<AuthService>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unique_test_data_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("reattachd-auth-test-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[tokio::test]
+    async fn issue_device_creates_unique_records() {
+        let data_dir = unique_test_data_dir();
+        let auth = AuthService::new(data_dir.clone()).await.unwrap();
+
+        let first = auth.issue_device("iPhone").await;
+        let second = auth.issue_device("iPhone").await;
+
+        assert_eq!(first.name, "iPhone");
+        assert_ne!(first.id, second.id);
+        assert_ne!(first.token, second.token);
+
+        let devices = auth.list_devices().await;
+        assert_eq!(devices.len(), 2);
+
+        assert!(auth.validate_device_token(&first.token).await.is_some());
+        assert!(auth.validate_device_token(&second.token).await.is_some());
+
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn revoke_device_invalidates_token() {
+        let data_dir = unique_test_data_dir();
+        let auth = AuthService::new(data_dir.clone()).await.unwrap();
+
+        let device = auth.issue_device("iPad").await;
+        assert!(auth.validate_device_token(&device.token).await.is_some());
+
+        assert!(auth.revoke_device(&device.id).await);
+        assert!(auth.validate_device_token(&device.token).await.is_none());
+
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+}

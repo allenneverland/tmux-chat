@@ -10,7 +10,7 @@ struct ContentView: View {
     @State private var configManager = ServerConfigManager.shared
     @State private var isCheckingAuth = true
     @State private var showCloudflareAuth = false
-    @State private var showQRScanner = false
+    @State private var showManualSetup = false
 
     var body: some View {
         Group {
@@ -40,7 +40,7 @@ struct ContentView: View {
             case .cloudflareExpired:
                 showCloudflareAuth = true
             case .deviceTokenInvalid:
-                showQRScanner = true
+                showManualSetup = true
             }
         }
         .fullScreenCover(isPresented: $showCloudflareAuth) {
@@ -50,8 +50,8 @@ struct ContentView: View {
                     NotificationCenter.default.post(name: .authenticationRestored, object: nil)
                 }
         }
-        .sheet(isPresented: $showQRScanner) {
-            QRScannerView()
+        .sheet(isPresented: $showManualSetup) {
+            ManualServerSetupView()
                 .onDisappear {
                     api.clearAuthError()
                     NotificationCenter.default.post(name: .authenticationRestored, object: nil)
@@ -88,7 +88,7 @@ struct ContentView: View {
 }
 
 struct SetupView: View {
-    @State private var showQRScanner = false
+    @State private var showManualSetup = false
     var onTryDemo: () -> Void
 
     var body: some View {
@@ -112,11 +112,11 @@ struct SetupView: View {
             Spacer()
 
             Button {
-                showQRScanner = true
+                showManualSetup = true
             } label: {
                 HStack {
-                    Image(systemName: "qrcode.viewfinder")
-                    Text("Scan QR Code to Connect")
+                    Image(systemName: "plus.circle")
+                    Text("Add Server Manually")
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
@@ -124,7 +124,7 @@ struct SetupView: View {
             .buttonStyle(.borderedProminent)
             .padding(.horizontal, 40)
 
-            Text("Scan the QR code from reattachd setup")
+            Text("Paste credentials from reattachd devices issue --name <name> --json")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -138,8 +138,8 @@ struct SetupView: View {
 
             Spacer()
         }
-        .sheet(isPresented: $showQRScanner) {
-            QRScannerView()
+        .sheet(isPresented: $showManualSetup) {
+            ManualServerSetupView()
         }
     }
 }
