@@ -98,6 +98,22 @@ struct RegisterDeviceResponse: Codable {
     }
 }
 
+struct IOSMetricsIngestRequest: Codable {
+    let notificationTapTotal: Int
+    let routeSuccessTotal: Int
+    let routeFallbackTotal: Int
+
+    enum CodingKeys: String, CodingKey {
+        case notificationTapTotal = "notification_tap_total"
+        case routeSuccessTotal = "route_success_total"
+        case routeFallbackTotal = "route_fallback_total"
+    }
+
+    var isEmpty: Bool {
+        notificationTapTotal == 0 && routeSuccessTotal == 0 && routeFallbackTotal == 0
+    }
+}
+
 struct IssuedDeviceCredentials: Decodable {
     let deviceId: String
     let deviceName: String

@@ -137,18 +137,18 @@ APNs payload：
 - [ ] 新增靜音設定 UI（host/session/pane）
 
 ### Phase 7 — 觀測與 SLO
-- [ ] `push-server` 指標：
-  - [ ] `events_bell_total`
-  - [ ] `events_agent_total`
-  - [ ] `apns_sent_total`
-  - [ ] `apns_failed_total`
-  - [ ] `invalid_token_removed_total`
-  - [ ] `event_to_apns_latency_ms`
-- [ ] iOS 指標：
-  - [ ] `notification_tap_total`
-  - [ ] `route_success_total`
-  - [ ] `route_fallback_total`
-- [ ] 建立 dashboard 與 alert
+- [x] `push-server` 指標：
+  - [x] `events_bell_total`
+  - [x] `events_agent_total`
+  - [x] `apns_sent_total`
+  - [x] `apns_failed_total`
+  - [x] `invalid_token_removed_total`
+  - [x] `event_to_apns_latency_ms`
+- [x] iOS 指標：
+  - [x] `notification_tap_total`
+  - [x] `route_success_total`
+  - [x] `route_fallback_total`
+- [x] 建立 dashboard 與 alert
 
 ### Phase 8 — 文件與上線
 - [ ] 更新 README/docs：改為 SSH onboarding

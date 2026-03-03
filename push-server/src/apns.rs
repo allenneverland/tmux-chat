@@ -100,6 +100,7 @@ impl ApnsService {
                 Err(a2::Error::ResponseError(ref response)) => {
                     if let Some(ref error_body) = response.error {
                         if error_body.reason == a2::ErrorReason::BadDeviceToken {
+                            failed += 1;
                             invalid_device_ids.push(device.id.clone());
                             continue;
                         }

@@ -78,11 +78,13 @@ async fn run() -> AppResult<()> {
     let app = Router::new()
         .route("/healthz", get(api::healthz))
         .route("/metrics", get(api::metrics))
+        .route("/metrics.json", get(api::metrics_json))
         .route("/v1/pairings/start", post(api::start_pairing))
         .route("/v1/pairings/complete", post(api::complete_pairing))
         .route("/v1/devices/register", post(api::register_device))
         .route("/v1/events/bell", post(api::ingest_bell))
         .route("/v1/events/agent", post(api::ingest_agent))
+        .route("/v1/metrics/ios", post(api::ingest_ios_metrics))
         .route("/v1/mutes", get(api::list_mutes).post(api::create_mute))
         .route("/v1/mutes/{id}", delete(api::delete_mute))
         .with_state(state);

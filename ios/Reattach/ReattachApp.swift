@@ -30,8 +30,18 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) -> Bool {
         AppDelegate.shared = self
         UNUserNotificationCenter.current().delegate = self
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleApplicationDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
         setupNotifications()
         return true
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     private func setupNotifications() {
@@ -108,6 +118,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let userInfo = response.notification.request.content.userInfo
         if let deviceId = userInfo["deviceId"] as? String,
            let paneTarget = userInfo["paneTarget"] as? String {
+            Task {
+                await NotificationMetricsReporter.shared.recordTap(deviceId: deviceId)
+            }
             let key = "\(deviceId):\(paneTarget)"
             unreadPanes.insert(key)
             pendingNavigationTarget = key
@@ -118,6 +131,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             )
         }
         completionHandler()
+    }
+
+    @objc
+    private func handleApplicationDidBecomeActive() {
+        Task {
+            await NotificationMetricsReporter.shared.flushNow()
+        }
     }
 
     func markPaneAsRead(deviceId: String, paneTarget: String) {

@@ -209,6 +209,29 @@ class ReattachAPI {
         )
     }
 
+    func reportIOSMetrics(deviceId: String, deltas: IOSMetricsIngestRequest) async throws {
+        guard !deltas.isEmpty else { return }
+        guard !pushServerBaseURL.isEmpty else {
+            throw APIError.serverError("Push server base URL is not configured")
+        }
+
+        guard let server = ServerConfigManager.shared.servers.first(where: { $0.deviceId == deviceId }) else {
+            throw APIError.serverError("Server not found for device \(deviceId)")
+        }
+
+        guard let deviceApiToken = server.deviceApiToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !deviceApiToken.isEmpty else {
+            throw APIError.serverError("Push device API token is missing. Re-run onboarding for this server.")
+        }
+
+        _ = try await requestToPushServer(
+            path: "/v1/metrics/ios",
+            method: "POST",
+            body: deltas,
+            bearerToken: deviceApiToken
+        )
+    }
+
     func listMutes(deviceApiToken: String? = nil) async throws -> [MuteRule] {
         let bearer = try resolveDeviceAPIToken(override: deviceApiToken)
         let emptyBody: String? = nil

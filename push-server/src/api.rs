@@ -2,7 +2,8 @@ use std::sync::atomic::Ordering;
 
 use axum::{
     extract::{Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
     Json,
 };
 use chrono::Utc;
@@ -12,7 +13,7 @@ use crate::{
     error::{AppError, AppResult},
     models::{
         ApnsEvent, CompletePairingRequest, CreateMuteRequest, EventSource, IngestEventRequest,
-        IngestEventResponse, RegisterDeviceRequest,
+        IngestEventResponse, IosMetricsIngestRequest, RegisterDeviceRequest,
     },
     state::AppState,
 };
@@ -21,7 +22,17 @@ pub async fn healthz() -> &'static str {
     "ok"
 }
 
-pub async fn metrics(State(state): State<AppState>) -> Json<crate::metrics::MetricsSnapshot> {
+pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+    (
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+        )],
+        state.metrics.render_prometheus(),
+    )
+}
+
+pub async fn metrics_json(State(state): State<AppState>) -> Json<crate::metrics::MetricsSnapshot> {
     Json(state.metrics.snapshot())
 }
 
@@ -100,6 +111,23 @@ pub async fn delete_mute(
     } else {
         Err(AppError::NotFound("mute rule not found".to_string()))
     }
+}
+
+pub async fn ingest_ios_metrics(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<IosMetricsIngestRequest>,
+) -> AppResult<StatusCode> {
+    let _token = authorize_device_api(&state.db, &headers)?;
+    validate_ios_metrics_request(&req)?;
+
+    state.metrics.observe_ios_routing(
+        req.notification_tap_total,
+        req.route_success_total,
+        req.route_fallback_total,
+    );
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn ingest_event(
@@ -185,6 +213,10 @@ async fn ingest_event(
         failed = dispatch.failed;
 
         if !dispatch.invalid_device_ids.is_empty() {
+            state
+                .metrics
+                .invalid_token_detected_total
+                .fetch_add(dispatch.invalid_device_ids.len() as u64, Ordering::Relaxed);
             let removed = state.db.revoke_devices(&dispatch.invalid_device_ids)?;
             state
                 .metrics
@@ -205,8 +237,9 @@ async fn ingest_event(
         .apns_failed_total
         .fetch_add(failed, Ordering::Relaxed);
 
-    if Utc::now() >= event.event_ts {
-        let latency_ms = (Utc::now() - event.event_ts).num_milliseconds().max(0) as u64;
+    let now = Utc::now();
+    if now >= event.event_ts {
+        let latency_ms = (now - event.event_ts).num_milliseconds().max(0) as u64;
         state.metrics.observe_latency_ms(latency_ms);
     }
 
@@ -243,4 +276,54 @@ fn bearer_token(headers: &HeaderMap) -> AppResult<String> {
     }
 
     Ok(token.to_string())
+}
+
+fn validate_ios_metrics_request(req: &IosMetricsIngestRequest) -> AppResult<()> {
+    const MAX_DELTA: u64 = 1_000_000;
+    let values = [
+        req.notification_tap_total,
+        req.route_success_total,
+        req.route_fallback_total,
+    ];
+
+    if values.iter().all(|v| *v == 0) {
+        return Err(AppError::bad_request(
+            "at least one iOS metric delta must be greater than zero",
+        ));
+    }
+
+    if values.iter().any(|v| *v > MAX_DELTA) {
+        return Err(AppError::bad_request(format!(
+            "iOS metric delta must be <= {} per request",
+            MAX_DELTA
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_ios_metrics_request;
+    use crate::models::IosMetricsIngestRequest;
+
+    #[test]
+    fn ios_metrics_request_rejects_zero_delta() {
+        let req = IosMetricsIngestRequest {
+            notification_tap_total: 0,
+            route_success_total: 0,
+            route_fallback_total: 0,
+        };
+        assert!(validate_ios_metrics_request(&req).is_err());
+    }
+
+    #[test]
+    fn ios_metrics_request_accepts_non_zero_delta() {
+        let req = IosMetricsIngestRequest {
+            notification_tap_total: 1,
+            route_success_total: 0,
+            route_fallback_total: 0,
+        };
+        assert!(validate_ios_metrics_request(&req).is_ok());
+    }
 }

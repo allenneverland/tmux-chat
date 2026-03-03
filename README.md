@@ -315,6 +315,15 @@ APNS_BUNDLE_ID=...
 PUSH_SERVER_COMPAT_NOTIFY_TOKEN=...   # required for reattachd /notify forwarding
 ```
 
+Observability endpoints for `push-server`:
+
+```bash
+GET /metrics       # Prometheus format
+GET /metrics.json  # JSON snapshot (debug)
+```
+
+Dashboard and alert templates are provided in `ops/observability/`.
+
 ### Build iOS app
 
 Open `ios/Reattach.xcodeproj` in Xcode and build to your device.

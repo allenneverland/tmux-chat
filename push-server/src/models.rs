@@ -62,6 +62,16 @@ pub struct IngestEventResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct IosMetricsIngestRequest {
+    #[serde(default)]
+    pub notification_tap_total: u64,
+    #[serde(default)]
+    pub route_success_total: u64,
+    #[serde(default)]
+    pub route_fallback_total: u64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateMuteRequest {
     pub scope: MuteScope,
     pub session_name: Option<String>,

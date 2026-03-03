@@ -1,0 +1,46 @@
+groups:
+  - name: reattach-slo
+    rules:
+      - alert: EventToApnsLatencyP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(event_to_apns_latency_ms_bucket[10m]))
+          ) > 10000
+        for: 10m
+        labels:
+          severity: page
+          service: reattach-push-server
+        annotations:
+          summary: "event_to_apns_latency_ms p95 > 10s"
+          description: "Push latency p95 exceeded 10s for 10 minutes."
+
+      - alert: RouteSuccessRateLow
+        expr: |
+          (
+            increase(route_success_total[15m]) /
+            clamp_min(increase(notification_tap_total[15m]), 1)
+          ) < 0.99
+          and increase(notification_tap_total[15m]) >= 20
+        for: 15m
+        labels:
+          severity: page
+          service: reattach-ios-routing
+        annotations:
+          summary: "Notification route success rate below 99%"
+          description: "Routing success ratio has remained below 99% for 15 minutes."
+
+      - alert: InvalidTokenCleanupRateLow
+        expr: |
+          (
+            increase(invalid_token_removed_total[24h]) /
+            clamp_min(increase(invalid_token_detected_total[24h]), 1)
+          ) < 0.99
+          and increase(invalid_token_detected_total[24h]) >= 10
+        for: 30m
+        labels:
+          severity: warning
+          service: reattach-push-server
+        annotations:
+          summary: "Invalid APNs token cleanup ratio below 99%"
+          description: "Invalid token cleanup ratio is below 99% over the last 24 hours."

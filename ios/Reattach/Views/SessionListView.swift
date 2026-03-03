@@ -330,6 +330,7 @@ struct SessionListView: View {
     private func routeToPane(deviceId: String, paneTarget: String) async {
         let targetServerExists = ServerConfigManager.shared.servers.contains { $0.deviceId == deviceId }
         guard targetServerExists else {
+            await NotificationMetricsReporter.shared.recordRouteFallback(deviceId: deviceId)
             showNavigationFallback(message: "The server for this notification is no longer configured.")
             return
         }
@@ -339,8 +340,12 @@ struct SessionListView: View {
 
         let routed = navigateToPaneWithTarget(paneTarget)
         if !routed {
+            await NotificationMetricsReporter.shared.recordRouteFallback(deviceId: deviceId)
             showNavigationFallback(message: "Pane \(paneTarget) no longer exists. Showing session list instead.")
+            return
         }
+
+        await NotificationMetricsReporter.shared.recordRouteSuccess(deviceId: deviceId)
     }
 
     private func navigateToPaneWithTarget(_ paneTarget: String) -> Bool {
