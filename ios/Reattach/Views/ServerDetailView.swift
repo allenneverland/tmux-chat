@@ -73,7 +73,7 @@ struct ServerDetailView: View {
     NavigationStack {
         ServerDetailView(server: ServerConfig(
             serverURL: "https://example.com",
-            deviceToken: "token",
+            controlToken: "token",
             deviceId: "device-id",
             deviceName: "My Mac",
             serverName: "Home Server",

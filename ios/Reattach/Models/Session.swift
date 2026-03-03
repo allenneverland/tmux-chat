@@ -88,6 +88,28 @@ struct PairingStartResponse: Codable {
     }
 }
 
+struct RegisterDeviceResponse: Codable {
+    let registrationId: String
+    let deviceApiToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case registrationId = "registration_id"
+        case deviceApiToken = "device_api_token"
+    }
+}
+
+struct IssuedDeviceCredentials: Decodable {
+    let deviceId: String
+    let deviceName: String
+    let deviceToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case deviceId = "device_id"
+        case deviceName = "device_name"
+        case deviceToken = "device_token"
+    }
+}
+
 struct OutputResponse: Codable {
     let output: String
 }

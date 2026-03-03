@@ -56,19 +56,23 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
           fi
-          cargo build --release --target ${{ matrix.target }} -p reattachd
+          cargo build --release --target ${{ matrix.target }} -p reattachd -p host-agent
 
       - name: Package
         run: |
           cd target/${{ matrix.target }}/release
           tar czvf reattachd-${{ matrix.name }}.tar.gz reattachd
+          tar czvf host-agent-${{ matrix.name }}.tar.gz host-agent
           mv reattachd-${{ matrix.name }}.tar.gz ../../../
+          mv host-agent-${{ matrix.name }}.tar.gz ../../../
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: reattachd-${{ matrix.name }}
-          path: reattachd-${{ matrix.name }}.tar.gz
+          path: |
+            reattachd-${{ matrix.name }}.tar.gz
+            host-agent-${{ matrix.name }}.tar.gz
 
   release:
     needs: build

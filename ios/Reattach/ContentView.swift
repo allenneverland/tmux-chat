@@ -9,13 +9,14 @@ struct ContentView: View {
     var api = ReattachAPI.shared
     @State private var configManager = ServerConfigManager.shared
     @State private var isCheckingAuth = true
-    @State private var showCloudflareAuth = false
-    @State private var showManualSetup = false
+    @State private var showOnboarding = false
 
     var body: some View {
         Group {
             if !configManager.isConfigured {
-                SetupView(onTryDemo: { configManager.enableDemoMode() })
+                SetupView {
+                    configManager.enableDemoMode()
+                }
             } else if isCheckingAuth && !configManager.isDemoMode {
                 ProgressView("Connecting...")
             } else {
@@ -37,25 +38,20 @@ struct ContentView: View {
         .onChange(of: api.authErrorType) { _, errorType in
             guard let errorType else { return }
             switch errorType {
-            case .cloudflareExpired:
-                showCloudflareAuth = true
             case .deviceTokenInvalid:
-                showManualSetup = true
+                showOnboarding = true
             }
         }
-        .fullScreenCover(isPresented: $showCloudflareAuth) {
-            CloudflareAuthWebView(api: api, isPresented: $showCloudflareAuth)
-                .onDisappear {
-                    api.clearAuthError()
-                    NotificationCenter.default.post(name: .authenticationRestored, object: nil)
+        .sheet(isPresented: $showOnboarding) {
+            SSHOnboardingView {
+                Task {
+                    await checkAuthentication()
                 }
-        }
-        .sheet(isPresented: $showManualSetup) {
-            ManualServerSetupView()
-                .onDisappear {
-                    api.clearAuthError()
-                    NotificationCenter.default.post(name: .authenticationRestored, object: nil)
-                }
+            }
+            .onDisappear {
+                api.clearAuthError()
+                NotificationCenter.default.post(name: .authenticationRestored, object: nil)
+            }
         }
     }
 
@@ -64,7 +60,6 @@ struct ContentView: View {
             try await withTimeout(seconds: 5) {
                 _ = try await api.listSessions()
             }
-            AppDelegate.shared?.registerDeviceTokenWithServer()
         } catch {
             print("Auth check failed: \(error)")
         }
@@ -88,7 +83,7 @@ struct ContentView: View {
 }
 
 struct SetupView: View {
-    @State private var showManualSetup = false
+    @State private var showOnboarding = false
     var onTryDemo: () -> Void
 
     var body: some View {
@@ -112,11 +107,11 @@ struct SetupView: View {
             Spacer()
 
             Button {
-                showManualSetup = true
+                showOnboarding = true
             } label: {
                 HStack {
-                    Image(systemName: "plus.circle")
-                    Text("Add Server Manually")
+                    Image(systemName: "lock.shield")
+                    Text("Add Server via SSH")
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
@@ -124,9 +119,11 @@ struct SetupView: View {
             .buttonStyle(.borderedProminent)
             .padding(.horizontal, 40)
 
-            Text("Paste credentials from reattachd devices issue --name <name> --json")
+            Text("App connects over SSH, installs host-agent, and configures notifications automatically.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
 
             Button {
                 onTryDemo()
@@ -138,8 +135,8 @@ struct SetupView: View {
 
             Spacer()
         }
-        .sheet(isPresented: $showManualSetup) {
-            ManualServerSetupView()
+        .sheet(isPresented: $showOnboarding) {
+            SSHOnboardingView()
         }
     }
 }

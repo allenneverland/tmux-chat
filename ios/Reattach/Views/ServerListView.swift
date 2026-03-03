@@ -9,7 +9,7 @@ struct ServerListView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var configManager = ServerConfigManager.shared
     @State private var purchaseManager = PurchaseManager.shared
-    @State private var showManualSetup = false
+    @State private var showOnboarding = false
     @State private var showUpgrade = false
     @State private var serverCountOnOpen = 0
 
@@ -35,8 +35,10 @@ struct ServerListView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showManualSetup) {
-                ManualServerSetupView()
+            .sheet(isPresented: $showOnboarding) {
+                SSHOnboardingView {
+                    NotificationCenter.default.post(name: .authenticationRestored, object: nil)
+                }
                     .onDisappear {
                         if configManager.servers.count > serverCountOnOpen {
                             dismiss()
@@ -137,7 +139,7 @@ struct ServerListView: View {
             Button {
                 if configManager.canAddServer {
                     serverCountOnOpen = configManager.servers.count
-                    showManualSetup = true
+                    showOnboarding = true
                 } else {
                     showUpgrade = true
                 }

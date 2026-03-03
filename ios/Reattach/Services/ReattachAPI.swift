@@ -8,7 +8,6 @@ import Observation
 import UIKit
 
 enum AuthErrorType {
-    case cloudflareExpired
     case deviceTokenInvalid
 }
 
@@ -31,8 +30,6 @@ enum APIError: LocalizedError {
             return "Decoding error: \(error.localizedDescription)"
         case .unauthorized(let type):
             switch type {
-            case .cloudflareExpired:
-                return "Session expired - please sign in again"
             case .deviceTokenInvalid:
                 return "Device credentials invalid - please re-add this server"
             }
@@ -63,8 +60,12 @@ class ReattachAPI {
         return trimmed
     }
 
-    var deviceToken: String? {
-        ServerConfigManager.shared.activeServer?.deviceToken
+    var controlToken: String? {
+        ServerConfigManager.shared.activeServer?.controlToken
+    }
+
+    var deviceApiToken: String? {
+        ServerConfigManager.shared.activeServer?.deviceApiToken
     }
 
     var isConfigured: Bool {
@@ -79,11 +80,7 @@ class ReattachAPI {
     private var demoInputHistory: [String: [String]] = [:]
 
     init() {
-        let config = URLSessionConfiguration.default
-        config.httpCookieAcceptPolicy = .always
-        config.httpShouldSetCookies = true
-        config.httpCookieStorage = .shared
-        self.session = URLSession(configuration: config)
+        self.session = URLSession(configuration: .default)
     }
 
     func clearAuthError() {
@@ -143,23 +140,14 @@ class ReattachAPI {
         _ = try await request(path: "/panes/\(encodedTarget)", method: "DELETE")
     }
 
-    func registerAPNsDevice(token: String) async throws {
-        guard let server = ServerConfigManager.shared.activeServer else {
-            return
-        }
+    func startPairing(deviceId: String, deviceName: String, serverName: String) async throws -> PairingStartResponse {
         guard !pushServerBaseURL.isEmpty else {
             throw APIError.serverError("Push server base URL is not configured")
         }
-        #if DEBUG
-        let sandbox = true
-        #else
-        let sandbox = false
-        #endif
-
         let startBody = PairingStartRequest(
-            deviceId: server.deviceId,
-            deviceName: UIDevice.current.name,
-            serverName: server.serverName
+            deviceId: deviceId,
+            deviceName: deviceName,
+            serverName: serverName
         )
         let startData = try await requestToPushServer(
             path: "/v1/pairings/start",
@@ -167,19 +155,49 @@ class ReattachAPI {
             body: startBody,
             bearerToken: nil
         )
-        let pairing = try JSONDecoder().decode(PairingStartResponse.self, from: startData)
+        return try JSONDecoder().decode(PairingStartResponse.self, from: startData)
+    }
 
+    func registerAPNsDevice(
+        token: String,
+        deviceId: String,
+        serverName: String,
+        deviceRegisterToken: String
+    ) async throws -> RegisterDeviceResponse {
+        #if DEBUG
+        let sandbox = true
+        #else
+        let sandbox = false
+        #endif
         let registerBody = RegisterDeviceRequest(
             token: token,
             sandbox: sandbox,
-            deviceId: server.deviceId,
-            serverName: server.serverName
+            deviceId: deviceId,
+            serverName: serverName
         )
-        _ = try await requestToPushServer(
+        let responseData = try await requestToPushServer(
             path: "/v1/devices/register",
             method: "POST",
             body: registerBody,
-            bearerToken: pairing.deviceRegisterToken
+            bearerToken: deviceRegisterToken
+        )
+        return try JSONDecoder().decode(RegisterDeviceResponse.self, from: responseData)
+    }
+
+    func registerAPNsDeviceForActiveServer(token: String) async throws -> RegisterDeviceResponse {
+        guard let server = ServerConfigManager.shared.activeServer else {
+            throw APIError.serverError("No active server")
+        }
+        let pairing = try await startPairing(
+            deviceId: server.deviceId,
+            deviceName: UIDevice.current.name,
+            serverName: server.serverName
+        )
+        return try await registerAPNsDevice(
+            token: token,
+            deviceId: server.deviceId,
+            serverName: server.serverName,
+            deviceRegisterToken: pairing.deviceRegisterToken
         )
     }
 
@@ -236,7 +254,7 @@ class ReattachAPI {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        if let token = deviceToken {
+        if let token = controlToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
@@ -253,38 +271,11 @@ class ReattachAPI {
 
             switch httpResponse.statusCode {
             case 200...299:
-                if data.isEmpty {
-                    isAuthenticated = true
-                    authErrorType = nil
-                    return data
-                }
-                if let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type"),
-                   contentType.contains("application/json") {
-                    isAuthenticated = true
-                    authErrorType = nil
-                    return data
-                } else if let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type"),
-                          contentType.contains("text/html") {
-                    isAuthenticated = false
-                    authErrorType = .cloudflareExpired
-                    throw APIError.unauthorized(.cloudflareExpired)
-                } else {
-                    isAuthenticated = true
-                    authErrorType = nil
-                    return data
-                }
-            case 302, 303, 307, 308:
-                isAuthenticated = false
-                authErrorType = .cloudflareExpired
-                throw APIError.unauthorized(.cloudflareExpired)
+                isAuthenticated = true
+                authErrorType = nil
+                return data
             case 401, 403:
                 isAuthenticated = false
-                let responseText = String(data: data, encoding: .utf8) ?? ""
-                if responseText.contains("access denied") || responseText.contains("Cloudflare") ||
-                   responseText.contains("CF-Access") || httpResponse.value(forHTTPHeaderField: "CF-RAY") != nil {
-                    authErrorType = .cloudflareExpired
-                    throw APIError.unauthorized(.cloudflareExpired)
-                }
                 authErrorType = .deviceTokenInvalid
                 throw APIError.unauthorized(.deviceTokenInvalid)
             default:

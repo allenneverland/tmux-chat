@@ -123,12 +123,12 @@ APNs payload：
 - [ ] auth middleware 改為無條件驗證（移除 open mode）
 
 ### Phase 5 — iOS Onboarding 改造
-- [ ] 新增 SSH 新增主機流程
-- [ ] App 透過 SSH 安裝 host-agent
-- [ ] App 完成 pairing 並註冊 APNs device
-- [ ] App 透過 SSH 取得 `reattachd` 控制 token
-- [ ] 移除 QR Scanner 與相機權限文案
-- [ ] 移除 Cloudflare Service Token UI/邏輯
+- [x] 新增 SSH 新增主機流程
+- [x] App 透過 SSH 安裝 host-agent
+- [x] App 完成 pairing 並註冊 APNs device
+- [x] App 透過 SSH 取得 `reattachd` 控制 token
+- [x] 移除 QR Scanner 與相機權限文案
+- [x] 移除 Cloudflare Service Token UI/邏輯
 
 ### Phase 6 — 通知導頁與靜音
 - [ ] 維持 `deviceId + paneTarget` 路由

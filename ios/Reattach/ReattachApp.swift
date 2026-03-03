@@ -21,7 +21,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     static var shared: AppDelegate?
     private(set) var deviceToken: String?
     var pendingNavigationTarget: String?
-    var unreadPanes: Set<String> = []  // Tracks "deviceId:paneTarget" keys (e.g., "abc123:dev:0.0")
+    var unreadPanes: Set<String> = []
+    private let apnsTokenDefaultsKey = "apns_device_token"
 
     func application(
         _ application: UIApplication,
@@ -68,29 +69,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        let previous = UserDefaults.standard.string(forKey: apnsTokenDefaultsKey)
         self.deviceToken = token
         print("Device token: \(token)")
-        registerDeviceTokenWithServer()
-    }
-
-    func registerDeviceTokenWithServer() {
-        guard let token = deviceToken else {
-            print("No device token available")
-            return
-        }
-
-        guard ReattachAPI.shared.isConfigured else {
-            print("Server not configured, skipping APNs registration")
-            return
-        }
-
-        Task {
-            do {
-                try await ReattachAPI.shared.registerAPNsDevice(token: token)
-                print("APNs device registered successfully")
-            } catch {
-                print("Failed to register APNs device: \(error)")
-            }
+        UserDefaults.standard.set(token, forKey: apnsTokenDefaultsKey)
+        if let previous, previous != token {
+            ServerConfigManager.shared.markAllServersNeedsPushRebind()
         }
     }
 

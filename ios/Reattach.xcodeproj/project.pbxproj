@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		67C100012F30000100AAA001 /* SSHClient in Frameworks */ = {isa = PBXBuildFile; productRef = 67C100032F30000100AAA001 /* SSHClient */; };
 		67BA10B52F24E24E00C2E0DD /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 67BA10B42F24E24E00C2E0DD /* StoreKit.framework */; };
 /* End PBXBuildFile section */
 
@@ -71,6 +72,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				67C100012F30000100AAA001 /* SSHClient in Frameworks */,
 				67BA10B52F24E24E00C2E0DD /* StoreKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -150,6 +152,7 @@
 			);
 			name = Reattach;
 			packageProductDependencies = (
+				67C100032F30000100AAA001 /* SSHClient */,
 			);
 			productName = Reattach;
 			productReference = 670759292EEDBDE1004D3434 /* Reattach.app */;
@@ -233,6 +236,9 @@
 			);
 			mainGroup = 670759202EEDBDE1004D3434;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				67C100022F30000100AAA001 /* XCRemoteSwiftPackageReference "swift-ssh-client" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6707592A2EEDBDE1004D3434 /* Products */;
 			projectDirPath = "";
@@ -305,6 +311,25 @@
 			targetProxy = 670759412EEDBDE3004D3434 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		67C100022F30000100AAA001 /* XCRemoteSwiftPackageReference "swift-ssh-client" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gaetanzanella/swift-ssh-client.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		67C100032F30000100AAA001 /* SSHClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 67C100022F30000100AAA001 /* XCRemoteSwiftPackageReference "swift-ssh-client" */;
+			productName = SSHClient;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		670759482EEDBDE3004D3434 /* Debug */ = {
