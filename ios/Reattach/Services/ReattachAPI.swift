@@ -8,7 +8,6 @@ import Observation
 
 enum AuthErrorType {
     case cloudflareExpired
-    case cloudflareServiceTokenInvalid
     case deviceTokenInvalid
 }
 
@@ -33,8 +32,6 @@ enum APIError: LocalizedError {
             switch type {
             case .cloudflareExpired:
                 return "Session expired - please sign in again"
-            case .cloudflareServiceTokenInvalid:
-                return "Cloudflare Access denied - please check your Service Token credentials"
             case .deviceTokenInvalid:
                 return "Device not registered - please scan QR code again"
             }
@@ -56,14 +53,6 @@ class ReattachAPI {
 
     var deviceToken: String? {
         ServerConfigManager.shared.activeServer?.deviceToken
-    }
-
-    var cfAccessClientId: String? {
-        ServerConfigManager.shared.activeServer?.cfAccessClientId
-    }
-
-    var cfAccessClientSecret: String? {
-        ServerConfigManager.shared.activeServer?.cfAccessClientSecret
     }
 
     var isConfigured: Bool {
@@ -172,12 +161,6 @@ class ReattachAPI {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
-        if let clientId = cfAccessClientId, let clientSecret = cfAccessClientSecret,
-           !clientId.isEmpty, !clientSecret.isEmpty {
-            request.setValue(clientId, forHTTPHeaderField: "CF-Access-Client-Id")
-            request.setValue(clientSecret, forHTTPHeaderField: "CF-Access-Client-Secret")
-        }
-
         if let body = body {
             request.httpBody = try JSONEncoder().encode(body)
         }
@@ -220,13 +203,8 @@ class ReattachAPI {
                 let responseText = String(data: data, encoding: .utf8) ?? ""
                 if responseText.contains("access denied") || responseText.contains("Cloudflare") ||
                    responseText.contains("CF-Access") || httpResponse.value(forHTTPHeaderField: "CF-RAY") != nil {
-                    if cfAccessClientId != nil && cfAccessClientSecret != nil {
-                        authErrorType = .cloudflareServiceTokenInvalid
-                        throw APIError.unauthorized(.cloudflareServiceTokenInvalid)
-                    } else {
-                        authErrorType = .cloudflareExpired
-                        throw APIError.unauthorized(.cloudflareExpired)
-                    }
+                    authErrorType = .cloudflareExpired
+                    throw APIError.unauthorized(.cloudflareExpired)
                 }
                 authErrorType = .deviceTokenInvalid
                 throw APIError.unauthorized(.deviceTokenInvalid)

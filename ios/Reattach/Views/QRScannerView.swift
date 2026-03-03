@@ -24,8 +24,6 @@ struct QRScannerView: View {
     @State private var pendingServerURL: String?
     @State private var pendingSetupToken: String?
     @State private var serverName: String = ""
-    @State private var cfAccessClientId: String = ""
-    @State private var cfAccessClientSecret: String = ""
 
     var body: some View {
         NavigationStack {
@@ -100,8 +98,6 @@ struct QRScannerView: View {
                 ServerConfirmView(
                     serverURL: server.serverURL,
                     serverName: $serverName,
-                    cfAccessClientId: $cfAccessClientId,
-                    cfAccessClientSecret: $cfAccessClientSecret,
                     onRegister: {
                         scannedServer = nil
                         pendingServerURL = server.serverURL
@@ -111,8 +107,6 @@ struct QRScannerView: View {
                     onCancel: {
                         scannedServer = nil
                         serverName = ""
-                        cfAccessClientId = ""
-                        cfAccessClientSecret = ""
                         isScanning = true
                     }
                 )
@@ -182,11 +176,6 @@ struct QRScannerView: View {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpShouldHandleCookies = true
 
-                if !cfAccessClientId.isEmpty && !cfAccessClientSecret.isEmpty {
-                    request.setValue(cfAccessClientId, forHTTPHeaderField: "CF-Access-Client-Id")
-                    request.setValue(cfAccessClientSecret, forHTTPHeaderField: "CF-Access-Client-Secret")
-                }
-
                 let body = ["setup_token": setupToken, "device_name": deviceName]
                 request.httpBody = try JSONEncoder().encode(body)
 
@@ -238,9 +227,7 @@ struct QRScannerView: View {
                     deviceId: registerResponse.device_id,
                     deviceName: deviceName,
                     serverName: finalServerName,
-                    registeredAt: Date(),
-                    cfAccessClientId: cfAccessClientId.isEmpty ? nil : cfAccessClientId,
-                    cfAccessClientSecret: cfAccessClientSecret.isEmpty ? nil : cfAccessClientSecret
+                    registeredAt: Date()
                 )
 
                 await MainActor.run {
@@ -262,12 +249,8 @@ struct QRScannerView: View {
 struct ServerConfirmView: View {
     let serverURL: String
     @Binding var serverName: String
-    @Binding var cfAccessClientId: String
-    @Binding var cfAccessClientSecret: String
     let onRegister: () -> Void
     let onCancel: () -> Void
-
-    @State private var showCloudflareFields = false
 
     var body: some View {
         NavigationStack {
@@ -283,23 +266,6 @@ struct ServerConfirmView: View {
                 }
 
                 Section {
-                    Toggle("Use Service Token", isOn: $showCloudflareFields)
-
-                    if showCloudflareFields {
-                        TextField("Client ID", text: $cfAccessClientId)
-                            .textContentType(.username)
-                            .autocapitalization(.none)
-                            .autocorrectionDisabled()
-                        SecureField("Client Secret", text: $cfAccessClientSecret)
-                            .textContentType(.password)
-                    }
-                } header: {
-                    Text("Cloudflare Access")
-                } footer: {
-                    Text("Enable this if your server uses Cloudflare Access with Service Token authentication.")
-                }
-
-                Section {
                     Button(action: onRegister) {
                         HStack {
                             Spacer()
@@ -308,7 +274,6 @@ struct ServerConfirmView: View {
                             Spacer()
                         }
                     }
-                    .disabled(showCloudflareFields && (cfAccessClientId.isEmpty || cfAccessClientSecret.isEmpty))
                 }
             }
             .navigationTitle("Add Server")

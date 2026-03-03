@@ -12,8 +12,6 @@ struct ServerDetailView: View {
     let server: ServerConfig
 
     @State private var serverName: String = ""
-    @State private var cfAccessClientId: String = ""
-    @State private var cfAccessClientSecret: String = ""
     @State private var showDeleteConfirmation = false
 
     var body: some View {
@@ -26,19 +24,6 @@ struct ServerDetailView: View {
                 LabeledContent("URL", value: server.serverURL)
             } header: {
                 Text("Server")
-            }
-
-            Section {
-                TextField("Client ID", text: $cfAccessClientId)
-                    .textContentType(.username)
-                    .autocapitalization(.none)
-                    .autocorrectionDisabled()
-                SecureField("Client Secret", text: $cfAccessClientSecret)
-                    .textContentType(.password)
-            } header: {
-                Text("Cloudflare Access (Optional)")
-            } footer: {
-                Text("Enter your Service Token credentials if using Cloudflare Access.")
             }
 
             Section {
@@ -74,16 +59,12 @@ struct ServerDetailView: View {
         }
         .onAppear {
             serverName = server.serverName
-            cfAccessClientId = server.cfAccessClientId ?? ""
-            cfAccessClientSecret = server.cfAccessClientSecret ?? ""
         }
     }
 
     private func saveChanges() {
         var updatedServer = server
         updatedServer.serverName = serverName
-        updatedServer.cfAccessClientId = cfAccessClientId.isEmpty ? nil : cfAccessClientId
-        updatedServer.cfAccessClientSecret = cfAccessClientSecret.isEmpty ? nil : cfAccessClientSecret
         configManager.updateServer(updatedServer)
     }
 }

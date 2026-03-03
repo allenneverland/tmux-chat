@@ -773,10 +773,8 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
         .expect("Failed to initialize auth service");
     let auth_service = Arc::new(auth_service);
 
-    // Check if any devices are registered
     if !auth_service.has_devices().await {
         tracing::warn!("No devices registered. Run 'reattachd setup --url <URL>' to register a device.");
-        tracing::info!("Starting in open mode (no authentication required)");
     }
 
     let apns_service = init_apns_service(data_dir).await;
@@ -840,12 +838,6 @@ async fn auth_middleware(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // If no devices registered, allow all requests
-    if !auth_service.has_devices().await {
-        return Ok(next.run(request).await);
-    }
-
-    // Check Authorization header
     let auth_header = request
         .headers()
         .get("Authorization")

@@ -14,8 +14,6 @@ struct ServerConfig: Codable, Identifiable, Equatable {
     var deviceName: String
     var serverName: String  // User-friendly name for the server
     var registeredAt: Date
-    var cfAccessClientId: String?
-    var cfAccessClientSecret: String?
 }
 
 @MainActor

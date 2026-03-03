@@ -11,7 +11,6 @@ struct ContentView: View {
     @State private var isCheckingAuth = true
     @State private var showCloudflareAuth = false
     @State private var showQRScanner = false
-    @State private var showServiceTokenError = false
 
     var body: some View {
         Group {
@@ -39,17 +38,7 @@ struct ContentView: View {
             guard let errorType else { return }
             switch errorType {
             case .cloudflareExpired:
-                // Service Tokenが設定されている場合は自動で認証されるのでWebViewは不要
-                if let server = configManager.activeServer,
-                   let clientId = server.cfAccessClientId,
-                   let clientSecret = server.cfAccessClientSecret,
-                   !clientId.isEmpty, !clientSecret.isEmpty {
-                    api.clearAuthError()
-                } else {
-                    showCloudflareAuth = true
-                }
-            case .cloudflareServiceTokenInvalid:
-                showServiceTokenError = true
+                showCloudflareAuth = true
             case .deviceTokenInvalid:
                 showQRScanner = true
             }
@@ -67,13 +56,6 @@ struct ContentView: View {
                     api.clearAuthError()
                     NotificationCenter.default.post(name: .authenticationRestored, object: nil)
                 }
-        }
-        .alert("Service Token Error", isPresented: $showServiceTokenError) {
-            Button("OK") {
-                api.clearAuthError()
-            }
-        } message: {
-            Text("Cloudflare Access denied. Please check your Service Token credentials in server settings.")
         }
     }
 
