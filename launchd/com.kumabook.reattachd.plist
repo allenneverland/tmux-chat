@@ -22,14 +22,10 @@
         <string>8787</string>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>APNS_KEY_BASE64</key>
-        <string>{{APNS_KEY_BASE64}}</string>
-        <key>APNS_KEY_ID</key>
-        <string>{{APNS_KEY_ID}}</string>
-        <key>APNS_TEAM_ID</key>
-        <string>{{APNS_TEAM_ID}}</string>
-        <key>APNS_BUNDLE_ID</key>
-        <string>{{APNS_BUNDLE_ID}}</string>
+        <key>PUSH_SERVER_BASE_URL</key>
+        <string>{{PUSH_SERVER_BASE_URL}}</string>
+        <key>PUSH_SERVER_COMPAT_NOTIFY_TOKEN</key>
+        <string>{{PUSH_SERVER_COMPAT_NOTIFY_TOKEN}}</string>
     </dict>
 </dict>
 </plist>

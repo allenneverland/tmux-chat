@@ -62,6 +62,32 @@ struct RegisterDeviceRequest: Codable {
     }
 }
 
+struct PairingStartRequest: Codable {
+    let deviceId: String
+    let deviceName: String
+    let serverName: String
+
+    enum CodingKeys: String, CodingKey {
+        case deviceId = "device_id"
+        case deviceName = "device_name"
+        case serverName = "server_name"
+    }
+}
+
+struct PairingStartResponse: Codable {
+    let pairingId: String
+    let pairingToken: String
+    let deviceRegisterToken: String
+    let expiresAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case pairingId = "pairing_id"
+        case pairingToken = "pairing_token"
+        case deviceRegisterToken = "device_register_token"
+        case expiresAt = "expires_at"
+    }
+}
+
 struct OutputResponse: Codable {
     let output: String
 }

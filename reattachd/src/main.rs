@@ -1,11 +1,9 @@
 mod api;
-mod apns;
 mod auth;
 mod tmux;
 
 use std::sync::Arc;
 
-use apns::{ApnsConfig, ApnsService};
 use auth::{AuthService, SharedAuthService};
 use axum::{
     extract::{Request, State},
@@ -777,7 +775,18 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
         tracing::warn!("No devices registered. Run 'reattachd setup --url <URL>' to register a device.");
     }
 
-    let apns_service = init_apns_service(data_dir).await;
+    let push_server_base_url = std::env::var("PUSH_SERVER_BASE_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8790".to_string());
+    let compat_notify_token = std::env::var("PUSH_SERVER_COMPAT_NOTIFY_TOKEN").unwrap_or_default();
+    if compat_notify_token.is_empty() {
+        tracing::warn!(
+            "PUSH_SERVER_COMPAT_NOTIFY_TOKEN is empty; /notify forwarding will likely fail authentication"
+        );
+    }
+    let notify_forwarder = Arc::new(api::NotifyForwarder::new(
+        push_server_base_url,
+        compat_notify_token,
+    ));
 
     let auth_for_middleware = auth_service.clone();
 
@@ -799,24 +808,11 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
         .route("/register", post(api::register_with_setup_token))
         .with_state(auth_service.clone());
 
-    let app = if let Some(apns) = apns_service {
-        let devices_route = Router::new()
-            .route("/devices", post(api::register_apns_device))
-            .with_state(Arc::clone(&apns))
-            .layer(middleware::from_fn_with_state(
-                auth_service.clone(),
-                auth_middleware,
-            ));
-        let notify_route = Router::new()
-            .route("/notify", post(api::send_notification))
-            .with_state(apns);
-        base_routes
-            .merge(devices_route)
-            .merge(notify_route)
-            .merge(register_routes)
-    } else {
-        base_routes.merge(register_routes)
-    };
+    let notify_route = Router::new()
+        .route("/notify", post(api::send_notification))
+        .with_state(notify_forwarder);
+
+    let app = base_routes.merge(notify_route).merge(register_routes);
 
     let port = std::env::var("REATTACHD_PORT")
         .or_else(|_| std::env::var("PORT"))
@@ -854,86 +850,5 @@ async fn auth_middleware(
             Ok(next.run(request).await)
         }
         None => Err(StatusCode::UNAUTHORIZED),
-    }
-}
-
-include!(concat!(env!("OUT_DIR"), "/apns_config.rs"));
-
-const XOR_KEY: &[u8] = b"reattachd_obfuscation_key_2026";
-
-fn xor_decode(hex_input: &str) -> Option<String> {
-    let bytes: Vec<u8> = (0..hex_input.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex_input[i..i + 2], 16))
-        .collect::<Result<Vec<u8>, _>>()
-        .ok()?;
-
-    let decoded: Vec<u8> = bytes
-        .iter()
-        .enumerate()
-        .map(|(i, b)| b ^ XOR_KEY[i % XOR_KEY.len()])
-        .collect();
-
-    String::from_utf8(decoded).ok()
-}
-
-fn get_apns_config() -> Option<(String, String, String, String)> {
-    let key_base64 = APNS_KEY_BASE64_OBFUSCATED
-        .and_then(xor_decode)
-        .or_else(|| std::env::var("APNS_KEY_BASE64").ok())?;
-    let key_id = APNS_KEY_ID_OBFUSCATED
-        .and_then(xor_decode)
-        .or_else(|| std::env::var("APNS_KEY_ID").ok())?;
-    let team_id = APNS_TEAM_ID_OBFUSCATED
-        .and_then(xor_decode)
-        .or_else(|| std::env::var("APNS_TEAM_ID").ok())?;
-    let bundle_id = APNS_BUNDLE_ID_OBFUSCATED
-        .and_then(xor_decode)
-        .or_else(|| std::env::var("APNS_BUNDLE_ID").ok())?;
-
-    Some((key_base64, key_id, team_id, bundle_id))
-}
-
-async fn init_apns_service(data_dir: std::path::PathBuf) -> Option<Arc<ApnsService>> {
-    let (key_base64, key_id, team_id, bundle_id) = match get_apns_config() {
-        Some(config) => config,
-        None => {
-            tracing::info!("APNs not configured");
-            return None;
-        }
-    };
-
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let key = match STANDARD.decode(&key_base64) {
-        Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("Invalid UTF-8 in APNS key: {}", e);
-                return None;
-            }
-        },
-        Err(e) => {
-            tracing::error!("Invalid base64 in APNS key: {}", e);
-            return None;
-        }
-    };
-
-    let apns_config = ApnsConfig {
-        key,
-        key_id,
-        team_id,
-        bundle_id,
-        data_dir,
-    };
-
-    match ApnsService::new(apns_config).await {
-        Ok(service) => {
-            tracing::info!("APNs service initialized");
-            Some(Arc::new(service))
-        }
-        Err(e) => {
-            tracing::warn!("Failed to initialize APNs service: {:?}", e);
-            None
-        }
     }
 }

@@ -5,6 +5,7 @@
 
 import Foundation
 import Observation
+import UIKit
 
 enum AuthErrorType {
     case cloudflareExpired
@@ -49,6 +50,17 @@ class ReattachAPI {
 
     var baseURL: String {
         ServerConfigManager.shared.activeServer?.serverURL ?? ""
+    }
+
+    var pushServerBaseURL: String {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "PushServerBaseURL") as? String else {
+            return ""
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.contains("$(") {
+            return ""
+        }
+        return trimmed
     }
 
     var deviceToken: String? {
@@ -131,21 +143,88 @@ class ReattachAPI {
         _ = try await request(path: "/panes/\(encodedTarget)", method: "DELETE")
     }
 
-    func registerDevice(token: String, sandbox: Bool, deviceId: String, serverName: String) async throws {
-        let body = RegisterDeviceRequest(token: token, sandbox: sandbox, deviceId: deviceId, serverName: serverName)
-        _ = try await request(path: "/devices", method: "POST", body: body)
-    }
-
     func registerAPNsDevice(token: String) async throws {
         guard let server = ServerConfigManager.shared.activeServer else {
             return
+        }
+        guard !pushServerBaseURL.isEmpty else {
+            throw APIError.serverError("Push server base URL is not configured")
         }
         #if DEBUG
         let sandbox = true
         #else
         let sandbox = false
         #endif
-        try await registerDevice(token: token, sandbox: sandbox, deviceId: server.deviceId, serverName: server.serverName)
+
+        let startBody = PairingStartRequest(
+            deviceId: server.deviceId,
+            deviceName: UIDevice.current.name,
+            serverName: server.serverName
+        )
+        let startData = try await requestToPushServer(
+            path: "/v1/pairings/start",
+            method: "POST",
+            body: startBody,
+            bearerToken: nil
+        )
+        let pairing = try JSONDecoder().decode(PairingStartResponse.self, from: startData)
+
+        let registerBody = RegisterDeviceRequest(
+            token: token,
+            sandbox: sandbox,
+            deviceId: server.deviceId,
+            serverName: server.serverName
+        )
+        _ = try await requestToPushServer(
+            path: "/v1/devices/register",
+            method: "POST",
+            body: registerBody,
+            bearerToken: pairing.deviceRegisterToken
+        )
+    }
+
+    private func requestToPushServer<T: Encodable>(
+        path: String,
+        method: String,
+        body: T? = nil,
+        bearerToken: String?
+    ) async throws -> Data {
+        guard let url = URL(string: pushServerBaseURL + path) else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let bearerToken {
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let body {
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.networkError(NSError(domain: "Invalid response", code: 0))
+            }
+
+            switch httpResponse.statusCode {
+            case 200...299:
+                return data
+            case 401, 403:
+                throw APIError.unauthorized(.deviceTokenInvalid)
+            default:
+                if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    throw APIError.serverError(errorResponse.error)
+                }
+                throw APIError.serverError("HTTP \(httpResponse.statusCode)")
+            }
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.networkError(error)
+        }
     }
 
     private func request<T: Encodable>(path: String, method: String, body: T? = nil) async throws -> Data {

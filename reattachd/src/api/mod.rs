@@ -6,7 +6,7 @@ mod register;
 mod sessions;
 
 pub use input::{send_escape, send_input};
-pub use notifications::{register_apns_device, send_notification};
+pub use notifications::{send_notification, NotifyForwarder, SharedNotifyForwarder};
 pub use output::get_output;
 pub use panes::delete_pane;
 pub use register::register_with_setup_token;

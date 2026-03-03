@@ -242,7 +242,7 @@ cp config.local.mk.sample config.local.mk
 cp ios/Reattach/Config.xcconfig.sample ios/Reattach/Config.xcconfig
 
 # Edit with your values
-vim config.local.mk        # APNs credentials
+vim config.local.mk        # reattachd -> push-server forwarding
 vim ios/Reattach/Config.xcconfig  # Server URL
 
 # Build and install daemon
@@ -256,16 +256,15 @@ make start
 #### config.local.mk
 
 ```makefile
-APNS_KEY_PATH = /path/to/AuthKey.p8
-APNS_KEY_ID = XXXXXXXXXX
-APNS_TEAM_ID = XXXXXXXXXX
-APNS_BUNDLE_ID = tokyo.kumabook.tmux.reattach
+PUSH_SERVER_BASE_URL = http://127.0.0.1:8790
+PUSH_SERVER_COMPAT_NOTIFY_TOKEN = CHANGE_ME
 ```
 
 #### ios/Reattach/Config.xcconfig
 
 ```
 BASE_URL = https:/$()/your-domain.example.com
+PUSH_SERVER_BASE_URL = https://your-push-server.example.com
 ```
 
 ### Makefile Commands
@@ -301,6 +300,16 @@ make push-server-docker-test      # Test in Docker
 make push-server-docker-build     # Build binary in Docker
 make push-server-docker-image     # Build runtime image
 make push-server-docker-run       # Run push-server container (port 8790)
+```
+
+Runtime environment variables for `push-server`:
+
+```bash
+APNS_KEY_BASE64=...          # required for APNs delivery
+APNS_KEY_ID=...
+APNS_TEAM_ID=...
+APNS_BUNDLE_ID=...
+PUSH_SERVER_COMPAT_NOTIFY_TOKEN=...   # required for reattachd /notify forwarding
 ```
 
 ### Build iOS app

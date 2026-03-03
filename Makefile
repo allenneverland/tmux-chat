@@ -10,11 +10,9 @@ LAUNCH_AGENTS_DIR := $(HOME)/Library/LaunchAgents
 PUSH_SERVER_IMAGE ?= reattach-push-server:local
 PUSH_SERVER_DEV_IMAGE ?= reattach-push-server-dev:local
 
-# APNs configuration (override in config.local.mk)
-APNS_KEY_BASE64 ?=
-APNS_KEY_ID ?=
-APNS_TEAM_ID ?=
-APNS_BUNDLE_ID ?=
+# Push-server forwarding configuration (override in config.local.mk)
+PUSH_SERVER_BASE_URL ?= http://127.0.0.1:8790
+PUSH_SERVER_COMPAT_NOTIFY_TOKEN ?=
 
 # Include local config if exists
 -include config.local.mk
@@ -35,10 +33,8 @@ install: build
 	@mkdir -p $(LAUNCH_AGENTS_DIR)
 	@sed -e 's|{{REATTACHD_PATH}}|$(REATTACHD_PATH)|g' \
 	     -e 's|{{LOG_DIR}}|$(LOG_DIR)|g' \
-	     -e 's|{{APNS_KEY_BASE64}}|$(APNS_KEY_BASE64)|g' \
-	     -e 's|{{APNS_KEY_ID}}|$(APNS_KEY_ID)|g' \
-	     -e 's|{{APNS_TEAM_ID}}|$(APNS_TEAM_ID)|g' \
-	     -e 's|{{APNS_BUNDLE_ID}}|$(APNS_BUNDLE_ID)|g' \
+	     -e 's|{{PUSH_SERVER_BASE_URL}}|$(PUSH_SERVER_BASE_URL)|g' \
+	     -e 's|{{PUSH_SERVER_COMPAT_NOTIFY_TOKEN}}|$(PUSH_SERVER_COMPAT_NOTIFY_TOKEN)|g' \
 	     launchd/com.kumabook.reattachd.plist > $(LAUNCH_AGENTS_DIR)/com.kumabook.reattachd.plist
 	@sed -e 's|{{CLOUDFLARED_PATH}}|$(CLOUDFLARED_PATH)|g' \
 	     -e 's|{{LOG_DIR}}|$(LOG_DIR)|g' \
