@@ -79,6 +79,15 @@ pub async fn create_mute(
     Ok(Json(response))
 }
 
+pub async fn list_mutes(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Json<Vec<crate::models::MuteRule>>> {
+    let token = authorize_device_api(&state.db, &headers)?;
+    let response = state.db.list_mutes(&token.subject_id)?;
+    Ok(Json(response))
+}
+
 pub async fn delete_mute(
     State(state): State<AppState>,
     headers: HeaderMap,

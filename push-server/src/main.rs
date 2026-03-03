@@ -83,7 +83,7 @@ async fn run() -> AppResult<()> {
         .route("/v1/devices/register", post(api::register_device))
         .route("/v1/events/bell", post(api::ingest_bell))
         .route("/v1/events/agent", post(api::ingest_agent))
-        .route("/v1/mutes", post(api::create_mute))
+        .route("/v1/mutes", get(api::list_mutes).post(api::create_mute))
         .route("/v1/mutes/{id}", delete(api::delete_mute))
         .with_state(state);
 

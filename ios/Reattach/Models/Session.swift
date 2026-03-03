@@ -117,3 +117,76 @@ struct OutputResponse: Codable {
 struct ErrorResponse: Codable {
     let error: String
 }
+
+enum MuteScope: String, CaseIterable, Codable, Hashable, Identifiable {
+    case host
+    case session
+    case pane
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .host:
+            return "Host"
+        case .session:
+            return "Session"
+        case .pane:
+            return "Pane"
+        }
+    }
+}
+
+enum MuteSource: String, CaseIterable, Codable, Hashable, Identifiable {
+    case all
+    case bell
+    case agent
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all:
+            return "All"
+        case .bell:
+            return "Bell"
+        case .agent:
+            return "Agent"
+        }
+    }
+}
+
+struct MuteRule: Codable, Identifiable, Hashable {
+    let id: String
+    let scope: MuteScope
+    let sessionName: String?
+    let paneTarget: String?
+    let source: MuteSource
+    let until: String?
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, scope, source, until
+        case sessionName = "session_name"
+        case paneTarget = "pane_target"
+        case createdAt = "created_at"
+    }
+}
+
+struct CreateMuteRequestBody: Codable {
+    let scope: MuteScope
+    let sessionName: String?
+    let paneTarget: String?
+    let source: MuteSource
+    let until: String?
+
+    enum CodingKeys: String, CodingKey {
+        case scope, source, until
+        case sessionName = "session_name"
+        case paneTarget = "pane_target"
+    }
+}
+
+struct CreateMuteResponse: Codable {
+    let id: String
+}

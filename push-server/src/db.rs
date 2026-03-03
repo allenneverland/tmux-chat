@@ -9,7 +9,8 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     CompletePairingRequest, CompletePairingResponse, CreateMuteRequest, CreateMuteResponse,
-    DeviceRecord, EventSource, MuteScope, RegisterDeviceRequest, RegisterDeviceResponse,
+    DeviceRecord, EventSource, MuteRule, MuteScope, MuteSource, RegisterDeviceRequest,
+    RegisterDeviceResponse,
     StartPairingRequest, StartPairingResponse, TokenRecord,
 };
 use crate::token::{generate_token, hash_token};
@@ -819,6 +820,72 @@ impl Database {
         Ok(changed > 0)
     }
 
+    pub fn list_mutes(&self, subject_device_row_id: &str) -> AppResult<Vec<MuteRule>> {
+        let conn = lock_conn(&self.conn)?;
+        let device_id = conn
+            .query_row(
+                "SELECT device_id FROM devices WHERE id = ?1 AND revoked_at IS NULL",
+                params![subject_device_row_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| AppError::unauthorized("device token subject is invalid"))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, scope, session_name, pane_target, source, until_ts, created_at
+             FROM mutes
+             WHERE device_id = ?1
+             ORDER BY created_at DESC",
+        )?;
+        let mut rows = stmt.query(params![device_id])?;
+        let mut out = Vec::new();
+        let now = now_utc();
+
+        while let Some(row) = rows.next()? {
+            let id: String = row.get(0)?;
+            let scope_raw: String = row.get(1)?;
+            let session_name: Option<String> = row.get(2)?;
+            let pane_target: Option<String> = row.get(3)?;
+            let source_raw: String = row.get(4)?;
+            let until_raw: Option<String> = row.get(5)?;
+            let created_at_raw: String = row.get(6)?;
+
+            let scope = parse_mute_scope(&scope_raw)
+                .ok_or_else(|| AppError::internal(format!("invalid mute scope: {}", scope_raw)))?;
+            let source = parse_mute_source(&source_raw)
+                .ok_or_else(|| AppError::internal(format!("invalid mute source: {}", source_raw)))?;
+            let created_at = parse_ts(&created_at_raw)?;
+
+            let until = until_raw.map(|raw| parse_ts(&raw)).transpose()?;
+            if let Some(until_ts) = until {
+                if now >= until_ts {
+                    continue;
+                }
+                out.push(MuteRule {
+                    id,
+                    scope,
+                    session_name,
+                    pane_target,
+                    source,
+                    until: Some(until_ts),
+                    created_at,
+                });
+            } else {
+                out.push(MuteRule {
+                    id,
+                    scope,
+                    session_name,
+                    pane_target,
+                    source,
+                    until: None,
+                    created_at,
+                });
+            }
+        }
+
+        Ok(out)
+    }
+
     pub fn is_muted(&self, device_id: &str, source: EventSource, pane_target: Option<&str>) -> AppResult<bool> {
         let conn = lock_conn(&self.conn)?;
         let mut stmt = conn.prepare(
@@ -1005,6 +1072,24 @@ fn bool_to_int(v: bool) -> i64 {
     }
 }
 
+fn parse_mute_scope(raw: &str) -> Option<MuteScope> {
+    match raw {
+        "host" => Some(MuteScope::Host),
+        "session" => Some(MuteScope::Session),
+        "pane" => Some(MuteScope::Pane),
+        _ => None,
+    }
+}
+
+fn parse_mute_source(raw: &str) -> Option<MuteSource> {
+    match raw {
+        "all" => Some(MuteSource::All),
+        "bell" => Some(MuteSource::Bell),
+        "agent" => Some(MuteSource::Agent),
+        _ => None,
+    }
+}
+
 fn extract_session_name(pane_target: &str) -> Option<&str> {
     pane_target.split(':').next()
 }
@@ -1012,4 +1097,135 @@ fn extract_session_name(pane_target: &str) -> Option<&str> {
 fn lock_conn(conn: &Mutex<Connection>) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
     conn.lock()
         .map_err(|_| AppError::internal("database lock poisoned"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{CompletePairingRequest, RegisterDeviceRequest, StartPairingRequest};
+
+    fn setup_database() -> Database {
+        let path = std::env::temp_dir().join(format!("push-server-test-{}.sqlite3", Uuid::new_v4()));
+        Database::new(&path).expect("database should initialize")
+    }
+
+    fn bootstrap_device(db: &Database, device_id: &str, apns_token: &str) -> TokenRecord {
+        let start = db
+            .start_pairing(
+                StartPairingRequest {
+                    device_id: device_id.to_string(),
+                    device_name: format!("{}-name", device_id),
+                    server_name: "server".to_string(),
+                },
+                600,
+            )
+            .expect("start pairing should succeed");
+
+        db.complete_pairing(
+            CompletePairingRequest {
+                pairing_token: start.pairing_token.clone(),
+                host_name: "host-a".to_string(),
+                platform: "macos".to_string(),
+            },
+            "https://push.example.com/v1/events/bell",
+        )
+        .expect("complete pairing should succeed");
+
+        let register = db
+            .register_device(
+                &start.device_register_token,
+                RegisterDeviceRequest {
+                    token: apns_token.to_string(),
+                    sandbox: false,
+                    device_id: device_id.to_string(),
+                    server_name: "server".to_string(),
+                },
+            )
+            .expect("register device should succeed");
+
+        db.validate_token(
+            &register.device_api_token,
+            &[Database::token_scope_device_api()],
+        )
+        .expect("device api token should be valid")
+    }
+
+    #[test]
+    fn list_mutes_returns_only_active_rules_for_subject_device() {
+        let db = setup_database();
+        let device_one = bootstrap_device(&db, "device-1", "apns-1");
+        let device_two = bootstrap_device(&db, "device-2", "apns-2");
+
+        db.create_mute(
+            &device_one.subject_id,
+            CreateMuteRequest {
+                scope: MuteScope::Host,
+                session_name: None,
+                pane_target: None,
+                source: MuteSource::All,
+                until: None,
+            },
+        )
+        .expect("host mute should be created");
+
+        db.create_mute(
+            &device_one.subject_id,
+            CreateMuteRequest {
+                scope: MuteScope::Session,
+                session_name: Some("project".to_string()),
+                pane_target: None,
+                source: MuteSource::Bell,
+                until: Some(Utc::now() + Duration::hours(1)),
+            },
+        )
+        .expect("session mute should be created");
+
+        db.create_mute(
+            &device_two.subject_id,
+            CreateMuteRequest {
+                scope: MuteScope::Pane,
+                session_name: None,
+                pane_target: Some("other:1.0".to_string()),
+                source: MuteSource::Agent,
+                until: None,
+            },
+        )
+        .expect("second device mute should be created");
+
+        let conn = lock_conn(&db.conn).expect("connection lock");
+        let subject_device_id: String = conn
+            .query_row(
+                "SELECT device_id FROM devices WHERE id = ?1",
+                params![device_one.subject_id.as_str()],
+                |row| row.get(0),
+            )
+            .expect("subject device id should exist");
+        conn.execute(
+            "INSERT INTO mutes (id, device_id, scope, session_name, pane_target, source, until_ts, created_at)
+             VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, ?6)",
+            params![
+                Uuid::new_v4().to_string(),
+                subject_device_id,
+                "host",
+                "all",
+                (Utc::now() - Duration::minutes(1)).to_rfc3339(),
+                Utc::now().to_rfc3339(),
+            ],
+        )
+        .expect("expired mute row should be inserted");
+        drop(conn);
+
+        let rules = db
+            .list_mutes(&device_one.subject_id)
+            .expect("list mutes should succeed");
+
+        assert_eq!(rules.len(), 2);
+        assert!(rules.iter().any(|rule| rule.scope == MuteScope::Host && rule.until.is_none()));
+        assert!(rules.iter().any(|rule| {
+            rule.scope == MuteScope::Session
+                && rule.session_name.as_deref() == Some("project")
+                && rule.source == MuteSource::Bell
+                && rule.until.is_some()
+        }));
+    }
 }

@@ -150,9 +150,7 @@ struct SessionListView: View {
             guard let deviceId = notification.userInfo?["deviceId"] as? String,
                   let paneTarget = notification.userInfo?["paneTarget"] as? String else { return }
             Task {
-                ServerConfigManager.shared.setActiveServer(deviceId)
-                await viewModel.loadSessions()
-                navigateToPaneWithTarget(paneTarget)
+                await routeToPane(deviceId: deviceId, paneTarget: paneTarget)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .unreadPanesChanged)) { _ in
@@ -309,26 +307,43 @@ struct SessionListView: View {
     }
 
     private func handlePendingNavigation() {
-        guard let key = AppDelegate.shared?.pendingNavigationTarget,
-              !viewModel.sessions.isEmpty else { return }
+        guard let key = AppDelegate.shared?.pendingNavigationTarget else { return }
         AppDelegate.shared?.pendingNavigationTarget = nil
         navigateToPaneWithKey(key)
     }
 
     private func navigateToPaneWithKey(_ key: String) {
         let components = key.split(separator: ":", maxSplits: 1)
-        guard components.count == 2 else { return }
+        guard components.count == 2 else {
+            viewModel.errorMessage = "Notification payload is invalid."
+            viewModel.showError = true
+            return
+        }
         let deviceId = String(components[0])
         let paneTarget = String(components[1])
 
         Task {
-            ServerConfigManager.shared.setActiveServer(deviceId)
-            await viewModel.loadSessions()
-            navigateToPaneWithTarget(paneTarget)
+            await routeToPane(deviceId: deviceId, paneTarget: paneTarget)
         }
     }
 
-    private func navigateToPaneWithTarget(_ paneTarget: String) {
+    private func routeToPane(deviceId: String, paneTarget: String) async {
+        let targetServerExists = ServerConfigManager.shared.servers.contains { $0.deviceId == deviceId }
+        guard targetServerExists else {
+            showNavigationFallback(message: "The server for this notification is no longer configured.")
+            return
+        }
+
+        ServerConfigManager.shared.setActiveServer(deviceId)
+        await viewModel.loadSessions()
+
+        let routed = navigateToPaneWithTarget(paneTarget)
+        if !routed {
+            showNavigationFallback(message: "Pane \(paneTarget) no longer exists. Showing session list instead.")
+        }
+    }
+
+    private func navigateToPaneWithTarget(_ paneTarget: String) -> Bool {
         for session in viewModel.sessions {
             for window in session.windows {
                 for pane in window.panes {
@@ -340,11 +355,23 @@ struct SessionListView: View {
                         } else {
                             selectedPane = item
                         }
-                        return
+                        return true
                     }
                 }
             }
         }
+
+        return false
+    }
+
+    private func showNavigationFallback(message: String) {
+        if horizontalSizeClass == .compact {
+            navigationPath = NavigationPath()
+        } else {
+            selectedPane = nil
+        }
+        viewModel.errorMessage = message
+        viewModel.showError = true
     }
 
     private var serverListButton: some View {

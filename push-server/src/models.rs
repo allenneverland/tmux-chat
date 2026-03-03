@@ -76,7 +76,18 @@ pub struct CreateMuteResponse {
     pub id: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Serialize)]
+pub struct MuteRule {
+    pub id: String,
+    pub scope: MuteScope,
+    pub session_name: Option<String>,
+    pub pane_target: Option<String>,
+    pub source: MuteSource,
+    pub until: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MuteScope {
     Host,
@@ -94,7 +105,7 @@ impl MuteScope {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MuteSource {
     Bell,

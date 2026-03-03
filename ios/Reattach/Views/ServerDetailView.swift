@@ -26,6 +26,14 @@ struct ServerDetailView: View {
                 Text("Server")
             }
 
+            Section("Notifications") {
+                NavigationLink {
+                    NotificationMutesView(server: server)
+                } label: {
+                    Label("Mute Settings", systemImage: "bell.slash")
+                }
+            }
+
             Section {
                 Button(role: .destructive) {
                     showDeleteConfirmation = true

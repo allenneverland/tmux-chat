@@ -95,6 +95,14 @@ class ReattachAPI {
         return try JSONDecoder().decode([Session].self, from: data)
     }
 
+    func listSessions(for server: ServerConfig) async throws -> [Session] {
+        if isDemoMode {
+            return Self.demoSessions
+        }
+        let data = try await request(path: "/sessions", method: "GET", server: server)
+        return try JSONDecoder().decode([Session].self, from: data)
+    }
+
     func createSession(name: String, cwd: String) async throws {
         if isDemoMode { return }
         let body = CreateSessionRequest(name: name, cwd: cwd)
@@ -201,6 +209,57 @@ class ReattachAPI {
         )
     }
 
+    func listMutes(deviceApiToken: String? = nil) async throws -> [MuteRule] {
+        let bearer = try resolveDeviceAPIToken(override: deviceApiToken)
+        let emptyBody: String? = nil
+        let data = try await requestToPushServer(
+            path: "/v1/mutes",
+            method: "GET",
+            body: emptyBody,
+            bearerToken: bearer
+        )
+        return try JSONDecoder().decode([MuteRule].self, from: data)
+    }
+
+    func createMute(_ requestBody: CreateMuteRequestBody, deviceApiToken: String? = nil) async throws -> CreateMuteResponse {
+        let bearer = try resolveDeviceAPIToken(override: deviceApiToken)
+        let data = try await requestToPushServer(
+            path: "/v1/mutes",
+            method: "POST",
+            body: requestBody,
+            bearerToken: bearer
+        )
+        return try JSONDecoder().decode(CreateMuteResponse.self, from: data)
+    }
+
+    func deleteMute(id: String, deviceApiToken: String? = nil) async throws {
+        let bearer = try resolveDeviceAPIToken(override: deviceApiToken)
+        let encodedId = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let emptyBody: String? = nil
+        _ = try await requestToPushServer(
+            path: "/v1/mutes/\(encodedId)",
+            method: "DELETE",
+            body: emptyBody,
+            bearerToken: bearer
+        )
+    }
+
+    private func resolveDeviceAPIToken(override: String?) throws -> String {
+        if let override {
+            let trimmed = override.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        if let deviceApiToken {
+            let trimmed = deviceApiToken.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        throw APIError.serverError("Push device API token is missing. Re-run onboarding for this server.")
+    }
+
     private func requestToPushServer<T: Encodable>(
         path: String,
         method: String,
@@ -245,7 +304,15 @@ class ReattachAPI {
         }
     }
 
-    private func request<T: Encodable>(path: String, method: String, body: T? = nil) async throws -> Data {
+    private func request<T: Encodable>(
+        path: String,
+        method: String,
+        body: T? = nil,
+        server: ServerConfig? = nil
+    ) async throws -> Data {
+        let targetServer = server ?? ServerConfigManager.shared.activeServer
+        let baseURL = targetServer?.serverURL ?? ""
+
         guard let url = URL(string: baseURL + path) else {
             throw APIError.invalidURL
         }
@@ -254,7 +321,7 @@ class ReattachAPI {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        if let token = controlToken {
+        if let token = targetServer?.controlToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
@@ -294,6 +361,11 @@ class ReattachAPI {
     private func request(path: String, method: String) async throws -> Data {
         let empty: String? = nil
         return try await request(path: path, method: method, body: empty)
+    }
+
+    private func request(path: String, method: String, server: ServerConfig) async throws -> Data {
+        let empty: String? = nil
+        return try await request(path: path, method: method, body: empty, server: server)
     }
 }
 
