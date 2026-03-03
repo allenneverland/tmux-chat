@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  rust-core:
+    name: Rust Core
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rust fmt (reattachd + host-agent)
+        run: cargo fmt -p reattachd -p host-agent -- --check
+
+      - name: Rust build (reattachd + host-agent)
+        run: cargo build --all-targets -p reattachd -p host-agent
+
+      - name: Rust test (reattachd + host-agent)
+        run: cargo test -p reattachd -p host-agent
+
+  push-server-docker:
+    name: Push Server (Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build push-server dev image
+        run: docker build -f push-server/Dockerfile --target dev -t reattach-push-server-dev:ci .
+
+      - name: Rust fmt in Docker (push-server)
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            reattach-push-server-dev:ci \
+            cargo fmt -p push-server -- --check
+
+      - name: Tests in Docker (push-server)
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            reattach-push-server-dev:ci \
+            cargo test -p push-server
+
+      - name: Build runtime image
+        run: docker build -f push-server/Dockerfile --target runtime -t reattach-push-server:ci .
+
+      - name: Run container smoke test
+        run: |
+          docker run -d --rm --name push-server-ci -p 127.0.0.1:8790:8790 reattach-push-server:ci
+          trap "docker stop push-server-ci" EXIT
+          for i in $(seq 1 15); do
+            if curl -fsS http://127.0.0.1:8790/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "push-server health check failed"
+          exit 1
+
+  ios-build:
+    name: iOS Build
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare Config.xcconfig
+        run: |
+          if [ ! -f ios/Reattach/Config.xcconfig ]; then
+            cat > ios/Reattach/Config.xcconfig <<'EOF'
+            // CI placeholder config
+            EOF
+          fi
+
+      - name: Build iOS app
+        run: |
+          xcodebuild \
+            -project ios/Reattach.xcodeproj \
+            -scheme Reattach \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build

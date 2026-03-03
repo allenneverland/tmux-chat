@@ -1,11 +1,14 @@
 # Reattach Makefile
 
 PROJECT_ROOT := $(shell pwd)
-REATTACHD_PATH := $(PROJECT_ROOT)/reattachd/target/release/reattachd
+REATTACHD_PATH := $(PROJECT_ROOT)/target/release/reattachd
 CLOUDFLARED_PATH := $(shell which cloudflared)
 CARGO := $(HOME)/.cargo/bin/cargo
+DOCKER ?= docker
 LOG_DIR := $(HOME)/Library/Logs/Reattach
 LAUNCH_AGENTS_DIR := $(HOME)/Library/LaunchAgents
+PUSH_SERVER_IMAGE ?= reattach-push-server:local
+PUSH_SERVER_DEV_IMAGE ?= reattach-push-server-dev:local
 
 # APNs configuration (override in config.local.mk)
 APNS_KEY_BASE64 ?=
@@ -16,13 +19,15 @@ APNS_BUNDLE_ID ?=
 # Include local config if exists
 -include config.local.mk
 
-.PHONY: all build install uninstall start stop restart reinstall logs clean install-hooks uninstall-hooks
+.PHONY: all build install uninstall start stop restart reinstall logs clean install-hooks uninstall-hooks \
+	push-server-docker-dev-image push-server-docker-fmt push-server-docker-test \
+	push-server-docker-build push-server-docker-image push-server-docker-run
 
 all: build
 
 # Build reattachd
 build:
-	cd reattachd && $(CARGO) build --release
+	$(CARGO) build --release -p reattachd
 
 # Install launchd services
 install: build
@@ -100,4 +105,31 @@ uninstall-hooks:
 
 # Clean build artifacts
 clean:
-	cd reattachd && cargo clean
+	$(CARGO) clean
+
+# Build push-server development image (for fmt/test/build inside Docker)
+push-server-docker-dev-image:
+	$(DOCKER) build -f push-server/Dockerfile --target dev -t $(PUSH_SERVER_DEV_IMAGE) .
+
+# Run push-server formatting check in Docker
+push-server-docker-fmt: push-server-docker-dev-image
+	$(DOCKER) run --rm -v "$(PROJECT_ROOT):/workspace" -w /workspace $(PUSH_SERVER_DEV_IMAGE) \
+		cargo fmt -p push-server -- --check
+
+# Run push-server tests in Docker
+push-server-docker-test: push-server-docker-dev-image
+	$(DOCKER) run --rm -v "$(PROJECT_ROOT):/workspace" -w /workspace $(PUSH_SERVER_DEV_IMAGE) \
+		cargo test -p push-server
+
+# Build push-server binary in Docker
+push-server-docker-build: push-server-docker-dev-image
+	$(DOCKER) run --rm -v "$(PROJECT_ROOT):/workspace" -w /workspace $(PUSH_SERVER_DEV_IMAGE) \
+		cargo build --release -p push-server
+
+# Build push-server runtime image
+push-server-docker-image:
+	$(DOCKER) build -f push-server/Dockerfile --target runtime -t $(PUSH_SERVER_IMAGE) .
+
+# Run push-server runtime container
+push-server-docker-run: push-server-docker-image
+	$(DOCKER) run --rm -p 8790:8790 $(PUSH_SERVER_IMAGE)

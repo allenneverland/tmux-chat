@@ -291,6 +291,18 @@ reattachd hooks install
 # ~/.codex/config.toml (top-level) -> notify = ["reattachd", "notify"]
 ```
 
+### Push Server in Docker
+
+Use Docker for all `push-server` operations:
+
+```bash
+make push-server-docker-fmt       # Format check in Docker
+make push-server-docker-test      # Test in Docker
+make push-server-docker-build     # Build binary in Docker
+make push-server-docker-image     # Build runtime image
+make push-server-docker-run       # Run push-server container (port 8790)
+```
+
 ### Build iOS app
 
 Open `ios/Reattach.xcodeproj` in Xcode and build to your device.

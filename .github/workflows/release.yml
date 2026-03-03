@@ -52,7 +52,6 @@ jobs:
           fi
 
       - name: Build
-        working-directory: reattachd
         env:
           APNS_KEY_BASE64: ${{ secrets.APNS_KEY_BASE64 }}
           APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
@@ -63,13 +62,13 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
           fi
-          cargo build --release --target ${{ matrix.target }}
+          cargo build --release --target ${{ matrix.target }} -p reattachd
 
       - name: Package
         run: |
-          cd reattachd/target/${{ matrix.target }}/release
+          cd target/${{ matrix.target }}/release
           tar czvf reattachd-${{ matrix.name }}.tar.gz reattachd
-          mv reattachd-${{ matrix.name }}.tar.gz ../../../../
+          mv reattachd-${{ matrix.name }}.tar.gz ../../../
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

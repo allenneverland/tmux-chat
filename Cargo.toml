@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "reattachd",
+    "push-server",
+    "host-agent",
+]
+resolver = "2"
+
