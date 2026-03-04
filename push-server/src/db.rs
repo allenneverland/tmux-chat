@@ -42,7 +42,7 @@ impl Database {
             std::fs::create_dir_all(parent)?;
         }
 
-        let mut conn = Connection::open(path)?;
+        let conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
 

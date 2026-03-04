@@ -204,13 +204,8 @@ async fn ingest_event(
     }
 
     let attempted = deliverable.len() as u64;
-    let mut delivered = 0u64;
-    let mut failed = 0u64;
-
-    if let Some(apns) = &state.apns {
+    let (delivered, failed) = if let Some(apns) = &state.apns {
         let dispatch = apns.send_to_devices(&deliverable, &event).await;
-        delivered = dispatch.sent;
-        failed = dispatch.failed;
 
         if !dispatch.invalid_device_ids.is_empty() {
             state
@@ -223,10 +218,12 @@ async fn ingest_event(
                 .invalid_token_removed_total
                 .fetch_add(removed, Ordering::Relaxed);
         }
+
+        (dispatch.sent, dispatch.failed)
     } else {
         tracing::warn!("APNs not configured; dropping event");
-        failed = attempted;
-    }
+        (0, attempted)
+    };
 
     state
         .metrics

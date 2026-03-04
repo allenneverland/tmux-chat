@@ -10,6 +10,13 @@ use crate::config::ApnsConfig;
 use crate::error::{AppError, AppResult};
 use crate::models::{ApnsEvent, DeviceRecord, DispatchResult};
 
+const CUSTOM_KEY_DEVICE_ID: &str = "deviceId";
+const CUSTOM_KEY_PANE_TARGET: &str = "paneTarget";
+const CUSTOM_KEY_TITLE: &str = "title";
+const CUSTOM_KEY_BODY: &str = "body";
+const CUSTOM_KEY_EVENT_TS: &str = "eventTs";
+const CUSTOM_KEY_SOURCE: &str = "source";
+
 pub struct ApnsService {
     sandbox_client: Client,
     production_client: Client,
@@ -56,7 +63,7 @@ impl ApnsService {
         let mut failed = 0u64;
         let mut invalid_device_ids = Vec::new();
 
-        for device in devices {
+        'send_each_device: for device in devices {
             let title = build_title(&device.server_name, &event.title);
             let builder = DefaultNotificationBuilder::new()
                 .set_title(&title)
@@ -64,28 +71,18 @@ impl ApnsService {
                 .set_sound("default");
 
             let mut payload = builder.build(&device.apns_token, options.clone());
-            payload
-                .data
-                .insert("deviceId".to_string(), Value::String(device.device_id.clone()));
-            if let Some(target) = &event.pane_target {
-                payload
-                    .data
-                    .insert("paneTarget".to_string(), Value::String(target.clone()));
+            for (key, value) in build_custom_data_entries(device, event) {
+                if let Err(error) = payload.add_custom_data(key, &value) {
+                    failed += 1;
+                    tracing::error!(
+                        device_id = %device.device_id,
+                        key = %key,
+                        ?error,
+                        "failed to attach APNs custom payload data"
+                    );
+                    continue 'send_each_device;
+                }
             }
-            payload
-                .data
-                .insert("title".to_string(), Value::String(event.title.clone()));
-            payload
-                .data
-                .insert("body".to_string(), Value::String(event.body.clone()));
-            payload.data.insert(
-                "eventTs".to_string(),
-                Value::String(event.event_ts.to_rfc3339()),
-            );
-            payload.data.insert(
-                "source".to_string(),
-                Value::String(event.source.as_str().to_string()),
-            );
 
             let client = if device.sandbox {
                 &self.sandbox_client
@@ -127,6 +124,22 @@ impl ApnsService {
     }
 }
 
+fn build_custom_data_entries(device: &DeviceRecord, event: &ApnsEvent) -> Vec<(&'static str, Value)> {
+    let mut entries = Vec::with_capacity(6);
+    entries.push((CUSTOM_KEY_DEVICE_ID, Value::String(device.device_id.clone())));
+    if let Some(target) = &event.pane_target {
+        entries.push((CUSTOM_KEY_PANE_TARGET, Value::String(target.clone())));
+    }
+    entries.push((CUSTOM_KEY_TITLE, Value::String(event.title.clone())));
+    entries.push((CUSTOM_KEY_BODY, Value::String(event.body.clone())));
+    entries.push((CUSTOM_KEY_EVENT_TS, Value::String(event.event_ts.to_rfc3339())));
+    entries.push((
+        CUSTOM_KEY_SOURCE,
+        Value::String(event.source.as_str().to_string()),
+    ));
+    entries
+}
+
 fn create_client(key: &str, key_id: &str, team_id: &str, sandbox: bool) -> AppResult<Client> {
     let mut cursor = Cursor::new(key.as_bytes());
     let endpoint = if sandbox {
@@ -155,4 +168,105 @@ fn build_title(server_name: &str, title: &str) -> String {
     let chars: Vec<char> = title.chars().collect();
     let skip = chars.len().saturating_sub(remaining);
     format!("{}{}", prefix, chars[skip..].iter().collect::<String>())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use chrono::{TimeZone, Utc};
+    use serde_json::Value;
+
+    use super::{
+        build_custom_data_entries, build_title, CUSTOM_KEY_BODY, CUSTOM_KEY_DEVICE_ID,
+        CUSTOM_KEY_EVENT_TS, CUSTOM_KEY_PANE_TARGET, CUSTOM_KEY_SOURCE, CUSTOM_KEY_TITLE,
+    };
+    use crate::models::{ApnsEvent, DeviceRecord, EventSource};
+
+    fn make_device() -> DeviceRecord {
+        DeviceRecord {
+            id: "row-1".to_string(),
+            device_id: "ios-device-123".to_string(),
+            server_name: "dev-server".to_string(),
+            apns_token: "apns-token".to_string(),
+            sandbox: true,
+        }
+    }
+
+    fn make_event(pane_target: Option<&str>, source: EventSource) -> ApnsEvent {
+        let event_ts = Utc
+            .with_ymd_and_hms(2026, 3, 1, 10, 11, 12)
+            .single()
+            .expect("valid timestamp");
+        ApnsEvent {
+            source,
+            title: "Bell".to_string(),
+            body: "Pane bell detected".to_string(),
+            pane_target: pane_target.map(str::to_string),
+            event_ts,
+        }
+    }
+
+    fn as_map(entries: Vec<(&'static str, Value)>) -> BTreeMap<&'static str, Value> {
+        entries.into_iter().collect()
+    }
+
+    #[test]
+    fn custom_data_contains_required_fields() {
+        let device = make_device();
+        let event = make_event(Some("work:0.1"), EventSource::Bell);
+        let map = as_map(build_custom_data_entries(&device, &event));
+
+        assert_eq!(
+            map.get(CUSTOM_KEY_DEVICE_ID),
+            Some(&Value::String("ios-device-123".to_string()))
+        );
+        assert_eq!(
+            map.get(CUSTOM_KEY_TITLE),
+            Some(&Value::String("Bell".to_string()))
+        );
+        assert_eq!(
+            map.get(CUSTOM_KEY_BODY),
+            Some(&Value::String("Pane bell detected".to_string()))
+        );
+        assert_eq!(
+            map.get(CUSTOM_KEY_SOURCE),
+            Some(&Value::String("bell".to_string()))
+        );
+        assert_eq!(
+            map.get(CUSTOM_KEY_EVENT_TS),
+            Some(&Value::String(event.event_ts.to_rfc3339()))
+        );
+    }
+
+    #[test]
+    fn custom_data_includes_pane_target_when_present() {
+        let device = make_device();
+        let event = make_event(Some("main:1.0"), EventSource::Agent);
+        let map = as_map(build_custom_data_entries(&device, &event));
+
+        assert_eq!(
+            map.get(CUSTOM_KEY_PANE_TARGET),
+            Some(&Value::String("main:1.0".to_string()))
+        );
+        assert_eq!(
+            map.get(CUSTOM_KEY_SOURCE),
+            Some(&Value::String("agent".to_string()))
+        );
+    }
+
+    #[test]
+    fn custom_data_omits_pane_target_when_absent() {
+        let device = make_device();
+        let event = make_event(None, EventSource::Bell);
+        let map = as_map(build_custom_data_entries(&device, &event));
+
+        assert!(!map.contains_key(CUSTOM_KEY_PANE_TARGET));
+    }
+
+    #[test]
+    fn build_title_keeps_short_text() {
+        let title = build_title("srv", "hello");
+        assert_eq!(title, "srv: hello");
+    }
 }
