@@ -2,9 +2,6 @@
 ios/TmuxChat/Config.xcconfig
 config.local.mk
 
-# Claude Code local settings
-.claude/
-
 # Xcode
 *.xcuserstate
 *.xcuserdatad/

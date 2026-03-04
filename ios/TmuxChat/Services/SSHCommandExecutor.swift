@@ -31,9 +31,9 @@ enum SSHCommandExecutorError: LocalizedError {
             }
             return "Remote command failed (\(exitCode)): \(stderr)"
         case .unsupportedPrivateKeyFormat:
-            return "Unsupported private key format. Use PEM-encoded ECDSA key."
+            return "Unsupported private key format. Supported formats: PEM-encoded ECDSA, or unencrypted OpenSSH Ed25519."
         case .encryptedPrivateKeyUnsupported:
-            return "Encrypted private keys are not supported in this build."
+            return "Encrypted private keys are not supported in this build. Use an unencrypted key or password authentication."
         }
     }
 }
@@ -43,7 +43,6 @@ protocol SSHCommandExecuting {
 }
 
 #if canImport(SSHClient) && canImport(NIOSSH)
-import CryptoKit
 import NIOCore
 import NIOSSH
 import SSHClient
@@ -76,6 +75,11 @@ final class SSHCommandExecutor: SSHCommandExecuting {
         } catch let error as SSHCommandExecutorError {
             await ssh.cancel()
             throw error
+        } catch let error as SSHConnectionError {
+            await ssh.cancel()
+            throw SSHCommandExecutorError.connectionFailed(
+                connectionDiagnostic(for: error, host: connection.host, port: connection.port)
+            )
         } catch {
             await ssh.cancel()
             throw SSHCommandExecutorError.connectionFailed(error.localizedDescription)
@@ -91,10 +95,7 @@ final class SSHCommandExecutor: SSHCommandExecuting {
                 hostKeyValidation: .acceptAll()
             )
         case .privateKey(let key, let passphrase):
-            if let passphrase, !passphrase.isEmpty {
-                throw SSHCommandExecutorError.encryptedPrivateKeyUnsupported
-            }
-            let parsed = try parsePEMPrivateKey(key)
+            let parsed = try SSHPrivateKeyParser.parse(privateKey: key, passphrase: passphrase)
             let delegate = StaticPrivateKeyAuthDelegate(username: connection.username, privateKey: parsed)
             return SSHAuthentication(
                 username: connection.username,
@@ -104,23 +105,15 @@ final class SSHCommandExecutor: SSHCommandExecuting {
         }
     }
 
-    private func parsePEMPrivateKey(_ key: String) throws -> NIOSSHPrivateKey {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            throw SSHCommandExecutorError.unsupportedPrivateKeyFormat
+    private func connectionDiagnostic(for error: SSHConnectionError, host: String, port: UInt16) -> String {
+        switch error {
+        case .timeout:
+            return "Timed out while connecting to \(host):\(port). Verify the host is reachable and SSH port is correct (usually 22)."
+        case .requireActiveConnection:
+            return "SSH connection is not active. Verify host, port, username, and authentication settings."
+        case .unknown:
+            return "SSH handshake or authentication failed for \(host):\(port). Verify SSH host/port (usually 22), username, and key/password. If using Tailscale, ensure this device is connected to the same tailnet."
         }
-
-        if let p256 = try? P256.Signing.PrivateKey(pemRepresentation: trimmed) {
-            return NIOSSHPrivateKey(p256Key: p256)
-        }
-        if let p384 = try? P384.Signing.PrivateKey(pemRepresentation: trimmed) {
-            return NIOSSHPrivateKey(p384Key: p384)
-        }
-        if let p521 = try? P521.Signing.PrivateKey(pemRepresentation: trimmed) {
-            return NIOSSHPrivateKey(p521Key: p521)
-        }
-
-        throw SSHCommandExecutorError.unsupportedPrivateKeyFormat
     }
 }
 

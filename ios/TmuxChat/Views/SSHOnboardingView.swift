@@ -60,6 +60,9 @@ struct SSHOnboardingView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                         SecureField("Private key passphrase (optional)", text: $privateKeyPassphrase)
+                        Text("Supported formats: PEM-encoded ECDSA, or unencrypted OpenSSH Ed25519.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
 

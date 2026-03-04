@@ -51,10 +51,12 @@ Claude/Codex hook --> tmux-chatd notify --> push-server --> APNs --> iOS
 - 已開啟通知權限的 iOS 裝置
 - iOS 裝置可透過 SSH 存取主機（網路路徑由使用者自行選擇：VPN、Tailscale、tunnel 等）
 
-部署文件（每個系統一份）：
+主機端部署文件（2 個系統）：
 - `docs/deployment-push-server.zh-TW.md`
-- `docs/deployment-tmux-chatd.zh-TW.md`
-- `docs/deployment-host-agent.zh-TW.md`
+- `docs/deployment-tmux.zh-TW.md`
+
+iOS App 發版文件：
+- `docs/deployment-ios.zh-TW.md`
 
 ## 快速開始
 

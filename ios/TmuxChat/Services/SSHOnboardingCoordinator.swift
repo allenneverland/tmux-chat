@@ -24,6 +24,7 @@ enum SSHOnboardingStep: String {
     case validatingInput
     case connectingSSH
     case verifyingTmuxChatd
+    case installingTmuxChatd
     case detectingPlatform
     case installingHostAgent
     case issuingControlToken
@@ -70,6 +71,8 @@ final class SSHOnboardingCoordinator {
             return "Connecting over SSH"
         case .verifyingTmuxChatd:
             return "Checking tmux-chatd on host"
+        case .installingTmuxChatd:
+            return "Installing tmux-chatd"
         case .detectingPlatform:
             return "Detecting host platform"
         case .installingHostAgent:
@@ -110,11 +113,14 @@ final class SSHOnboardingCoordinator {
             _ = try await sshExecutor.run(command: "echo ssh-ok", on: connectionSpec)
 
             step = .verifyingTmuxChatd
-            do {
-                try await installer.ensureTmuxChatdInstalled(on: connectionSpec)
-            } catch {
-                throw HostAgentInstallerError.missingTmuxChatd
+            let hasTmuxChatd = (try? await sshExecutor.run(
+                command: "/bin/sh -lc \(shellQuote("command -v tmux-chatd >/dev/null 2>&1 || [ -x \"$HOME/.local/bin/tmux-chatd\" ]"))",
+                on: connectionSpec
+            )) != nil
+            if !hasTmuxChatd {
+                step = .installingTmuxChatd
             }
+            let tmuxChatdExecutable = try await installer.ensureTmuxChatdInstalled(on: connectionSpec)
 
             step = .detectingPlatform
             let platform = try await installer.detectPlatform(on: connectionSpec)
@@ -127,7 +133,10 @@ final class SSHOnboardingCoordinator {
             )
 
             step = .issuingControlToken
-            let issued = try await issueDeviceCredentials(on: connectionSpec)
+            let issued = try await issueDeviceCredentials(
+                on: connectionSpec,
+                tmuxChatdExecutable: tmuxChatdExecutable
+            )
 
             step = .startingPairing
             let pairing = try await api.startPairing(
@@ -183,10 +192,12 @@ final class SSHOnboardingCoordinator {
     }
 
     private func makeConnectionSpec(from input: SSHOnboardingInput) throws -> SSHConnectionSpec {
-        let host = input.sshHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !host.isEmpty else {
+        let hostInput = input.sshHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !hostInput.isEmpty else {
             throw APIError.serverError("SSH host is required")
         }
+        let host = try validateSSHHost(hostInput)
+
         let username = input.sshUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !username.isEmpty else {
             throw APIError.serverError("SSH username is required")
@@ -215,10 +226,44 @@ final class SSHOnboardingCoordinator {
         )
     }
 
-    private func issueDeviceCredentials(on connection: SSHConnectionSpec) async throws -> IssuedDeviceCredentials {
+    private func validateSSHHost(_ value: String) throws -> String {
+        if value.contains("://") {
+            throw APIError.serverError("SSH host should be hostname/IP only, without http:// or https://")
+        }
+
+        if value.contains("@") {
+            throw APIError.serverError("SSH host should not include username. Fill username in the Username field.")
+        }
+
+        if value.contains("/") || value.contains("?") || value.contains("#") {
+            throw APIError.serverError("SSH host should not include URL path or query")
+        }
+
+        if let index = value.lastIndex(of: ":"),
+           !value.hasPrefix("["),
+           !value.contains("::") {
+            let suffix = value[value.index(after: index)...]
+            if !suffix.isEmpty, suffix.allSatisfy(\.isNumber) {
+                throw APIError.serverError("SSH host should not include :port. Use the Port field instead.")
+            }
+        }
+
+        if value.hasPrefix("["),
+           value.hasSuffix("]"),
+           value.count > 2 {
+            return String(value.dropFirst().dropLast())
+        }
+
+        return value
+    }
+
+    private func issueDeviceCredentials(
+        on connection: SSHConnectionSpec,
+        tmuxChatdExecutable: String
+    ) async throws -> IssuedDeviceCredentials {
         let rawDeviceName = UIDevice.current.name
-        let command = "tmux-chatd devices issue --name \(shellQuote(rawDeviceName)) --json"
-        let result = try await sshExecutor.run(command: command, on: connection)
+        let command = "\(shellQuote(tmuxChatdExecutable)) devices issue --name \(shellQuote(rawDeviceName)) --json"
+        let result = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(command))", on: connection)
         return try decodeJSONFromOutput(result.stdout, as: IssuedDeviceCredentials.self)
     }
 

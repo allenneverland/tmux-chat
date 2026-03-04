@@ -51,10 +51,12 @@ Claude/Codex hook --> tmux-chatd notify --> push-server --> APNs --> iOS
 - iOS device with notification permission enabled
 - SSH access from iOS device to host (network path is user choice: VPN, Tailscale, tunnel, etc.)
 
-Deployment docs (one per system, Traditional Chinese):
+Host-side deployment docs (2 systems, Traditional Chinese):
 - `docs/deployment-push-server.zh-TW.md`
-- `docs/deployment-tmux-chatd.zh-TW.md`
-- `docs/deployment-host-agent.zh-TW.md`
+- `docs/deployment-tmux.zh-TW.md`
+
+iOS app release doc (Traditional Chinese):
+- `docs/deployment-ios.zh-TW.md`
 
 ## Quick Start
 
