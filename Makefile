@@ -9,6 +9,11 @@ LOG_DIR := $(HOME)/Library/Logs/Reattach
 LAUNCH_AGENTS_DIR := $(HOME)/Library/LaunchAgents
 PUSH_SERVER_IMAGE ?= reattach-push-server:local
 PUSH_SERVER_DEV_IMAGE ?= reattach-push-server-dev:local
+PUSH_SERVER_CONTAINER_NAME ?= reattach-push-server
+PUSH_SERVER_ENV_FILE ?= ops/deploy/push-server.env
+PUSH_SERVER_HOST_DATA_DIR ?= /var/lib/reattach/push-server
+PUSH_SERVER_HOST_PORT ?= 8790
+PUSH_SERVER_CONTAINER_PORT ?= 8790
 
 # Push-server forwarding configuration (override in config.local.mk)
 PUSH_SERVER_BASE_URL ?= http://127.0.0.1:8790
@@ -19,7 +24,8 @@ PUSH_SERVER_COMPAT_NOTIFY_TOKEN ?=
 
 .PHONY: all build install uninstall start stop restart reinstall logs clean install-hooks uninstall-hooks \
 	push-server-docker-dev-image push-server-docker-fmt push-server-docker-test \
-	push-server-docker-build push-server-docker-image push-server-docker-run
+	push-server-docker-build push-server-docker-image push-server-docker-run \
+	push-server-env-init push-server-deploy push-server-stop push-server-status push-server-logs
 
 all: build
 
@@ -129,3 +135,33 @@ push-server-docker-image:
 # Run push-server runtime container
 push-server-docker-run: push-server-docker-image
 	$(DOCKER) run --rm -p 8790:8790 $(PUSH_SERVER_IMAGE)
+
+# Initialize local push-server env file from sample (contains APNs placeholders).
+push-server-env-init:
+	@test -f "$(PUSH_SERVER_ENV_FILE)" || cp ops/deploy/push-server.env.sample "$(PUSH_SERVER_ENV_FILE)"
+	@echo "Env file ready: $(PUSH_SERVER_ENV_FILE)"
+	@echo "Fill in APNs values before first deploy."
+
+# One-click push-server deployment (Docker + env-file; no secrets in command line).
+push-server-deploy:
+	@DOCKER="$(DOCKER)" \
+		PUSH_SERVER_ENV_FILE="$(PUSH_SERVER_ENV_FILE)" \
+		PUSH_SERVER_IMAGE="$(PUSH_SERVER_IMAGE)" \
+		PUSH_SERVER_CONTAINER_NAME="$(PUSH_SERVER_CONTAINER_NAME)" \
+		PUSH_SERVER_HOST_DATA_DIR="$(PUSH_SERVER_HOST_DATA_DIR)" \
+		PUSH_SERVER_HOST_PORT="$(PUSH_SERVER_HOST_PORT)" \
+		PUSH_SERVER_CONTAINER_PORT="$(PUSH_SERVER_CONTAINER_PORT)" \
+		ops/deploy/push-server-deploy.sh
+
+# Stop/remove deployed push-server container.
+push-server-stop:
+	@$(DOCKER) rm -f "$(PUSH_SERVER_CONTAINER_NAME)" >/dev/null 2>&1 || true
+	@echo "Stopped $(PUSH_SERVER_CONTAINER_NAME)"
+
+# Show push-server container status.
+push-server-status:
+	@$(DOCKER) ps -a --filter "name=^/$(PUSH_SERVER_CONTAINER_NAME)$$"
+
+# Follow push-server logs.
+push-server-logs:
+	@$(DOCKER) logs -f "$(PUSH_SERVER_CONTAINER_NAME)"
