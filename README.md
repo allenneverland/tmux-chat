@@ -231,6 +231,21 @@ make push-server-status
 
 `ops/deploy/push-server.env` is gitignored and keeps APNs secrets out of command history.
 
+Default host data dir is rootless:
+
+```bash
+~/.local/share/tmux-chat/push-server
+```
+
+If you set `XDG_DATA_HOME`, it uses `$XDG_DATA_HOME/tmux-chat/push-server`.
+To pin a system-level directory explicitly:
+
+```bash
+PUSH_SERVER_HOST_DATA_DIR=/var/lib/tmux-chat/push-server make push-server-deploy
+```
+
+If a legacy `/var/lib/tmux-chat/push-server` exists but is not writable, deployment stops intentionally to avoid data split. Move data first, then set `PUSH_SERVER_HOST_DATA_DIR` to the new path.
+
 Additional Docker targets:
 
 ```bash

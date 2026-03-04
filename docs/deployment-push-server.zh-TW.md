@@ -42,6 +42,17 @@ make push-server-env-init
 make push-server-deploy
 ```
 
+資料目錄預設（rootless）：
+
+- `~/.local/share/tmux-chat/push-server`
+- 若有設定 `XDG_DATA_HOME`，則為 `$XDG_DATA_HOME/tmux-chat/push-server`
+
+若你要固定系統級路徑，可顯式指定：
+
+```bash
+PUSH_SERVER_HOST_DATA_DIR=/var/lib/tmux-chat/push-server make push-server-deploy
+```
+
 常用操作：
 
 ```bash
@@ -97,6 +108,9 @@ curl -fsS http://127.0.0.1:8790/metrics.json | head
   - 常見是 `PUSH_SERVER_COMPAT_NOTIFY_TOKEN` 與 `tmux-chatd` 端不一致。
 - `host-agent pair` 回傳 ingest URL 不可達
   - 檢查 `PUSH_SERVER_PUBLIC_BASE_URL` 是否為 host-agent 可連到的 URL。
+- `mkdir: cannot create directory '/var/lib/tmux-chat': Permission denied`
+  - 代表你在非 root 權限使用系統級路徑。新版預設會改用 rootless 路徑。
+  - 若你有既有 `/var/lib/tmux-chat/push-server` 資料但不可寫，部署會安全中止避免資料分裂；請先搬移資料後指定 `PUSH_SERVER_HOST_DATA_DIR` 再部署。
 
 ## 8. 安全建議
 

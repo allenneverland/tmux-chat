@@ -231,6 +231,21 @@ make push-server-status
 
 `ops/deploy/push-server.env` 已加入 `.gitignore`，可避免 APNs 金鑰出現在指令歷史。
 
+預設資料目錄為 rootless：
+
+```bash
+~/.local/share/tmux-chat/push-server
+```
+
+若有設定 `XDG_DATA_HOME`，則使用 `$XDG_DATA_HOME/tmux-chat/push-server`。
+若你要固定系統級路徑，請顯式指定：
+
+```bash
+PUSH_SERVER_HOST_DATA_DIR=/var/lib/tmux-chat/push-server make push-server-deploy
+```
+
+若偵測到 legacy `/var/lib/tmux-chat/push-server` 但你目前不可寫，部署會刻意中止以避免資料分裂；請先搬移資料，再指定 `PUSH_SERVER_HOST_DATA_DIR` 後重跑。
+
 其他 Docker 目標：
 
 ```bash

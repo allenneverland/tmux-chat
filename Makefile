@@ -11,7 +11,9 @@ PUSH_SERVER_IMAGE ?= tmux-chat-push-server:local
 PUSH_SERVER_DEV_IMAGE ?= tmux-chat-push-server-dev:local
 PUSH_SERVER_CONTAINER_NAME ?= tmux-chat-push-server
 PUSH_SERVER_ENV_FILE ?= ops/deploy/push-server.env
-PUSH_SERVER_HOST_DATA_DIR ?= /var/lib/tmux-chat/push-server
+# Optional: explicitly pin host data dir for push-server container.
+# If empty, ops/deploy/push-server-deploy.sh resolves a safe default.
+PUSH_SERVER_HOST_DATA_DIR ?=
 PUSH_SERVER_HOST_PORT ?= 8790
 PUSH_SERVER_CONTAINER_PORT ?= 8790
 
