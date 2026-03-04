@@ -760,6 +760,7 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
 
     // Base routes with authentication
     let base_routes = Router::new()
+        .route("/diagnostics", get(api::diagnostics))
         .route("/sessions", get(api::list_sessions))
         .route("/sessions", post(api::create_session))
         .route("/panes/{target}", delete(api::delete_pane))
@@ -775,7 +776,11 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
         .route("/notify", post(api::send_notification))
         .with_state(notify_forwarder);
 
-    let app = base_routes.merge(notify_route);
+    let public_routes = Router::new()
+        .route("/healthz", get(api::healthz))
+        .route("/capabilities", get(api::capabilities));
+
+    let app = public_routes.merge(base_routes).merge(notify_route);
 
     let port = std::env::var("TMUX_CHATD_PORT")
         .or_else(|_| std::env::var("PORT"))

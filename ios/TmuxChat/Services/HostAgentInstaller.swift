@@ -127,6 +127,124 @@ final class HostAgentInstaller {
         return result.stdout
     }
 
+    func ensureTmuxChatdRunning(
+        on connection: SSHConnectionSpec,
+        executable: String,
+        pushServerBaseURL: String,
+        expectedUsername: String
+    ) async throws {
+        let script = """
+        set -eu
+
+        BIN=\(shellQuote(executable))
+        PUSH_URL=\(shellQuote(pushServerBaseURL))
+        EXPECTED_USER=\(shellQuote(expectedUsername))
+        CURRENT_USER="$(id -un)"
+        LOG_DIR="$HOME/.local/state/tmux-chatd"
+        mkdir -p "$LOG_DIR"
+
+        if [ "$CURRENT_USER" != "$EXPECTED_USER" ]; then
+          echo "SSH user mismatch: connected as $CURRENT_USER but expected $EXPECTED_USER" >&2
+          exit 1
+        fi
+
+        listener_owner() {
+          if command -v lsof >/dev/null 2>&1; then
+            PID="$(lsof -nP -iTCP:8787 -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true)"
+            if [ -n "$PID" ]; then
+              ps -o user= -p "$PID" 2>/dev/null | awk '{print $1}' | head -n 1
+              return 0
+            fi
+          fi
+
+          if command -v ss >/dev/null 2>&1; then
+            PID="$(ss -ltnp 2>/dev/null | awk '/:8787[[:space:]]/ { print }' | grep -Eo 'pid=[0-9]+' | head -n 1 | cut -d= -f2 || true)"
+            if [ -n "$PID" ]; then
+              ps -o user= -p "$PID" 2>/dev/null | awk '{print $1}' | head -n 1
+              return 0
+            fi
+          fi
+
+          return 0
+        }
+
+        check_ready() {
+          if command -v curl >/dev/null 2>&1; then
+            CODE="$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8787/sessions || true)"
+            case "$CODE" in
+              200|401|403|404|405)
+                return 0
+                ;;
+            esac
+          elif command -v nc >/dev/null 2>&1; then
+            nc -z 127.0.0.1 8787 >/dev/null 2>&1 && return 0
+          fi
+          return 1
+        }
+
+        OWNER="$(listener_owner || true)"
+        if [ -n "$OWNER" ] && [ "$OWNER" != "$CURRENT_USER" ]; then
+          echo "Port 8787 is already served by tmux-chatd user $OWNER, not $CURRENT_USER. Reconnect with SSH user $OWNER or stop the existing service first." >&2
+          exit 1
+        fi
+
+        if ! check_ready; then
+          if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+            mkdir -p "$HOME/.config/systemd/user"
+            {
+              echo "[Unit]"
+              echo "Description=tmux-chatd"
+              echo "After=network-online.target"
+              echo "Wants=network-online.target"
+              echo
+              echo "[Service]"
+              echo "Type=simple"
+              echo "ExecStart=$BIN"
+              echo "Restart=always"
+              echo "RestartSec=2"
+              echo "Environment=TMUX_CHATD_BIND_ADDR=127.0.0.1"
+              echo "Environment=TMUX_CHATD_PORT=8787"
+              echo "Environment=TMUX_CHATD_DATA_DIR=$HOME/.local/share/tmux-chatd"
+              echo "Environment=PUSH_SERVER_BASE_URL=$PUSH_URL"
+              echo
+              echo "[Install]"
+              echo "WantedBy=default.target"
+            } > "$HOME/.config/systemd/user/tmux-chatd.service"
+            systemctl --user daemon-reload || true
+            systemctl --user enable --now tmux-chatd.service || true
+          fi
+        fi
+
+        if ! check_ready; then
+          if command -v pgrep >/dev/null 2>&1 && pgrep -f "$BIN" >/dev/null 2>&1; then
+            :
+          else
+            nohup "$BIN" > "$LOG_DIR/tmux-chatd.log" 2>&1 &
+          fi
+        fi
+
+        OWNER="$(listener_owner || true)"
+        if [ -n "$OWNER" ] && [ "$OWNER" != "$CURRENT_USER" ]; then
+          echo "tmux-chatd started as unexpected user $OWNER. Expected $CURRENT_USER." >&2
+          exit 1
+        fi
+
+        ATTEMPT=0
+        while [ "$ATTEMPT" -lt 20 ]; do
+          if check_ready; then
+            exit 0
+          fi
+          ATTEMPT=$((ATTEMPT + 1))
+          sleep 1
+        done
+
+        echo "tmux-chatd is installed but not reachable on 127.0.0.1:8787. Check $LOG_DIR/tmux-chatd.log" >&2
+        exit 1
+        """
+
+        _ = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(script))", on: connection)
+    }
+
     private func detectTmuxChatdExecutable(on connection: SSHConnectionSpec) async throws -> String? {
         let script = """
         if command -v tmux-chatd >/dev/null 2>&1; then

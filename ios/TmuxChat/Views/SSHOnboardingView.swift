@@ -20,6 +20,7 @@ struct SSHOnboardingView: View {
     @State private var privateKeyPassphrase = ""
     @State private var showError = false
 
+    var serverToRepair: ServerConfig? = nil
     var onCompleted: (() -> Void)?
 
     var body: some View {
@@ -82,7 +83,7 @@ struct SSHOnboardingView: View {
                     }
                     .disabled(coordinator.isRunning)
                 } footer: {
-                    Text("TmuxChat will connect over SSH, install host-agent, pair notifications, and save server credentials.")
+                    Text("TmuxChat connects over SSH, installs host-agent, pairs notifications, and saves credentials. Use the same SSH user that owns your tmux sessions.")
                 }
             }
             .navigationTitle("Add Server")
@@ -102,14 +103,15 @@ struct SSHOnboardingView: View {
             }
             .onAppear {
                 if serverURL.isEmpty {
-                    serverURL = defaultServerURL()
+                    serverURL = serverToRepair?.serverURL ?? defaultServerURL()
+                }
+                if serverName.isEmpty, let serverToRepair {
+                    serverName = serverToRepair.serverName
                 }
                 if sshHost.isEmpty, let host = URL(string: serverURL)?.host {
                     sshHost = host
                 }
-                if sshUsername.isEmpty {
-                    sshUsername = "root"
-                }
+                applyStoredSSHCredential()
             }
         }
     }
@@ -135,7 +137,6 @@ struct SSHOnboardingView: View {
 
         let success = await coordinator.start(input: input, apnsToken: AppDelegate.shared?.deviceToken)
         if success {
-            NotificationCenter.default.post(name: .authenticationRestored, object: nil)
             onCompleted?()
             dismiss()
             return
@@ -145,6 +146,42 @@ struct SSHOnboardingView: View {
 
     private func defaultServerURL() -> String {
         ServerConfigManager.shared.activeServer?.serverURL ?? ""
+    }
+
+    private func applyStoredSSHCredential() {
+        guard sshHost.isEmpty || sshUsername.isEmpty else { return }
+
+        guard let credentialId = serverToRepair?.sshCredentialId ?? ServerConfigManager.shared.activeServer?.sshCredentialId else {
+            return
+        }
+        guard let stored = try? SSHCredentialStore.shared.load(id: credentialId) else {
+            return
+        }
+
+        if sshHost.isEmpty {
+            sshHost = stored.host
+        }
+        if sshPort == "22" {
+            sshPort = String(stored.port)
+        }
+        if sshUsername.isEmpty {
+            sshUsername = stored.username
+        }
+        switch stored.secret {
+        case .password(let value):
+            authMode = .password
+            if password.isEmpty {
+                password = value
+            }
+        case .privateKey(let key, let passphrase):
+            authMode = .privateKey
+            if privateKey.isEmpty {
+                privateKey = key
+            }
+            if privateKeyPassphrase.isEmpty {
+                privateKeyPassphrase = passphrase ?? ""
+            }
+        }
     }
 }
 

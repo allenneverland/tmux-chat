@@ -695,6 +695,8 @@ class PaneDetailViewModel {
             contentVersion = UUID()
         } catch let error as APIError {
             if case .unauthorized = error {
+                errorMessage = "Server authentication expired. Reconnect and re-pair this server."
+                showError = true
                 return
             }
             errorMessage = error.localizedDescription
@@ -716,6 +718,8 @@ class PaneDetailViewModel {
             await refreshSilently()
         } catch let error as APIError {
             if case .unauthorized = error {
+                errorMessage = "Server authentication expired. Reconnect and re-pair this server."
+                showError = true
                 return
             }
             errorMessage = error.localizedDescription
@@ -736,6 +740,8 @@ class PaneDetailViewModel {
             await refreshSilently()
         } catch let error as APIError {
             if case .unauthorized = error {
+                errorMessage = "Server authentication expired. Reconnect and re-pair this server."
+                showError = true
                 return
             }
             errorMessage = error.localizedDescription

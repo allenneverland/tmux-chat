@@ -57,7 +57,13 @@ class TmuxChatAPI {
         if trimmed.isEmpty || trimmed.contains("$(") {
             return ""
         }
-        return trimmed
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              (scheme == "http" || scheme == "https"),
+              url.host != nil else {
+            return ""
+        }
+        return trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
     }
 
     var controlToken: String? {
@@ -101,6 +107,16 @@ class TmuxChatAPI {
         }
         let data = try await request(path: "/sessions", method: "GET", server: server)
         return try JSONDecoder().decode([Session].self, from: data)
+    }
+
+    func getCapabilities() async throws -> DaemonCapabilitiesResponse {
+        let data = try await requestWithoutAuth(path: "/capabilities", method: "GET")
+        return try JSONDecoder().decode(DaemonCapabilitiesResponse.self, from: data)
+    }
+
+    func getDiagnostics() async throws -> DaemonDiagnosticsResponse {
+        let data = try await request(path: "/diagnostics", method: "GET")
+        return try JSONDecoder().decode(DaemonDiagnosticsResponse.self, from: data)
     }
 
     func createSession(name: String, cwd: String) async throws {
@@ -320,6 +336,59 @@ class TmuxChatAPI {
                 }
                 throw APIError.serverError("HTTP \(httpResponse.statusCode)")
             }
+        } catch let error as URLError {
+            let message = friendlyNetworkErrorMessage(for: error, url: url)
+            let wrapped = NSError(
+                domain: "TmuxChatAPI.Network",
+                code: error.errorCode,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+            throw APIError.networkError(wrapped)
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.networkError(error)
+        }
+    }
+
+    private func requestWithoutAuth(
+        path: String,
+        method: String,
+        server: ServerConfig? = nil
+    ) async throws -> Data {
+        let targetServer = server ?? ServerConfigManager.shared.activeServer
+        guard let url = makeControlPlaneURL(path: path, server: targetServer) else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.networkError(NSError(domain: "Invalid response", code: 0))
+            }
+
+            switch httpResponse.statusCode {
+            case 200...299:
+                return data
+            default:
+                if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    throw APIError.serverError(errorResponse.error)
+                }
+                throw APIError.serverError("HTTP \(httpResponse.statusCode)")
+            }
+        } catch let error as URLError {
+            let message = friendlyNetworkErrorMessage(for: error, url: url)
+            let wrapped = NSError(
+                domain: "TmuxChatAPI.Network",
+                code: error.errorCode,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+            throw APIError.networkError(wrapped)
         } catch let error as APIError {
             throw error
         } catch {
@@ -334,9 +403,7 @@ class TmuxChatAPI {
         server: ServerConfig? = nil
     ) async throws -> Data {
         let targetServer = server ?? ServerConfigManager.shared.activeServer
-        let baseURL = targetServer?.serverURL ?? ""
-
-        guard let url = URL(string: baseURL + path) else {
+        guard let url = makeControlPlaneURL(path: path, server: targetServer) else {
             throw APIError.invalidURL
         }
 
@@ -374,10 +441,77 @@ class TmuxChatAPI {
                 }
                 throw APIError.serverError("HTTP \(httpResponse.statusCode)")
             }
+        } catch let error as URLError {
+            let message = friendlyNetworkErrorMessage(for: error, url: url)
+            let wrapped = NSError(
+                domain: "TmuxChatAPI.Network",
+                code: error.errorCode,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+            throw APIError.networkError(wrapped)
         } catch let error as APIError {
             throw error
         } catch {
             throw APIError.networkError(error)
+        }
+    }
+
+    private func makeControlPlaneURL(path: String, server: ServerConfig?) -> URL? {
+        let baseURL = server?.serverURL ?? ""
+        guard let normalizedBaseURL = normalizeControlPlaneBaseURL(baseURL) else {
+            return nil
+        }
+        return URL(string: normalizedBaseURL + path)
+    }
+
+    private func normalizeControlPlaneBaseURL(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("$(") else {
+            return nil
+        }
+        guard var components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(),
+              (scheme == "http" || scheme == "https"),
+              components.host != nil else {
+            return nil
+        }
+
+        let path = components.percentEncodedPath.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if path == "/healthz" || path == "/healthz/" || path == "/" {
+            components.percentEncodedPath = ""
+        }
+
+        components.scheme = scheme
+        components.query = nil
+        components.fragment = nil
+        components.user = nil
+        components.password = nil
+
+        guard let normalized = components.string else {
+            return nil
+        }
+        return normalized.hasSuffix("/") ? String(normalized.dropLast()) : normalized
+    }
+
+    private func friendlyNetworkErrorMessage(for error: URLError, url: URL) -> String {
+        let host = url.host ?? url.absoluteString
+        let portSuffix = url.port.map { ":\($0)" } ?? ""
+        let endpoint = "\(host)\(portSuffix)"
+        let tailscaleHint = host.hasSuffix(".ts.net")
+            ? " If using Tailscale, ensure this iPhone is connected to the same tailnet."
+            : ""
+
+        switch error.code {
+        case .notConnectedToInternet:
+            return "Cannot reach \(endpoint). Check internet connectivity.\(tailscaleHint)"
+        case .cannotFindHost, .dnsLookupFailed:
+            return "Cannot resolve host \(endpoint). Verify the server URL and DNS/Tailscale status."
+        case .cannotConnectToHost, .timedOut, .networkConnectionLost:
+            return "Cannot connect to \(endpoint). Verify server is running and reachable from this device.\(tailscaleHint)"
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot:
+            return "TLS handshake failed for \(endpoint). Check HTTPS certificate and device time."
+        default:
+            return error.localizedDescription
         }
     }
 

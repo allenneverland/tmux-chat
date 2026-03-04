@@ -94,6 +94,7 @@ enum PaneIcon {
 struct SessionListView: View {
     @State private var viewModel = SessionListViewModel()
     @State private var showingCreateSheet = false
+    @State private var showRepairOnboarding = false
     @State private var selectedPane: PaneNavigationItem?
     @State private var navigationPath = NavigationPath()
     @State private var unreadPaneKeys: Set<String> = []
@@ -124,6 +125,13 @@ struct SessionListView: View {
         .sheet(isPresented: $showingCreateSheet) {
             CreateSessionView { name, cwd in
                 await viewModel.createSession(name: name, cwd: cwd)
+            }
+        }
+        .sheet(isPresented: $showRepairOnboarding) {
+            SSHOnboardingView(serverToRepair: configManager.activeServer) {
+                Task {
+                    await viewModel.loadSessions()
+                }
             }
         }
         .sheet(isPresented: $showServerList) {
@@ -227,15 +235,41 @@ struct SessionListView: View {
 
     @ViewBuilder
     private var listContent: some View {
-        if viewModel.isLoading && viewModel.sessions.isEmpty {
+        switch viewModel.connectionState {
+        case .checking where viewModel.sessions.isEmpty:
             ProgressView("Loading sessions...")
-        } else {
+        case .unauthorized:
+            blockingRecoveryView(
+                title: "Server Authentication Expired",
+                description: "The server rejected this device token. Reconnect and re-pair this server to restore control."
+            )
+        case .unsupportedServer(let message):
+            blockingRecoveryView(
+                title: "Server Upgrade Required",
+                description: message
+            )
+        case .contextMismatch(let message):
+            blockingRecoveryView(
+                title: "tmux User Context Mismatch",
+                description: message
+            )
+        case .unreachable(let message):
+            blockingRecoveryView(
+                title: "Server Unreachable",
+                description: message
+            )
+        case .serverError(let message):
+            blockingRecoveryView(
+                title: "Server Error",
+                description: message
+            )
+        default:
             List {
                 if viewModel.sessions.isEmpty {
                     ContentUnavailableView(
                         "No Sessions",
                         systemImage: "terminal",
-                        description: Text("Create a new session to get started")
+                        description: Text("Connected successfully. Create a new session to get started.")
                     )
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -254,6 +288,25 @@ struct SessionListView: View {
                             }
                         }
                         .padding(.vertical, 4)
+                    }
+                }
+                if let diagnostics = viewModel.diagnostics {
+                    Section("Host Context") {
+                        HStack {
+                            Text("Daemon user")
+                            Spacer()
+                            Text(diagnostics.daemonUser)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let socket = diagnostics.tmuxSocket, !socket.isEmpty {
+                            HStack {
+                                Text("tmux socket")
+                                Spacer()
+                                Text(socket)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
                     }
                 }
                 ForEach(viewModel.sessions) { session in
@@ -277,6 +330,7 @@ struct SessionListView: View {
                     } label: {
                         Label("New Session", systemImage: "plus.circle")
                     }
+                    .disabled(!viewModel.canCreateSession)
                 }
             }
             .listStyle(.sidebar)
@@ -377,6 +431,70 @@ struct SessionListView: View {
         }
         viewModel.errorMessage = message
         viewModel.showError = true
+    }
+
+    private func blockingRecoveryView(title: String, description: String) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.orange)
+
+            Text(title)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            Text(description)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            if let diagnostics = viewModel.diagnostics {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Daemon user: \(diagnostics.daemonUser)")
+                        .font(.caption)
+                    if let socket = diagnostics.tmuxSocket, !socket.isEmpty {
+                        Text("tmux socket: \(socket)")
+                            .font(.caption)
+                    }
+                }
+                .foregroundStyle(.secondary)
+                .padding(12)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 24)
+            }
+
+            Button {
+                showRepairOnboarding = true
+            } label: {
+                Text("Reconnect & Re-pair")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.horizontal, 24)
+
+            Button {
+                showServerList = true
+            } label: {
+                Text("Manage Servers")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .padding(.horizontal, 24)
+
+            Button {
+                Task {
+                    await viewModel.loadSessions()
+                }
+            } label: {
+                Text("Retry")
+            }
+            .padding(.top, 8)
+            Spacer()
+        }
     }
 
     private var serverListButton: some View {
@@ -633,10 +751,24 @@ struct PaneRow: View {
 @MainActor
 @Observable
 class SessionListViewModel {
+    enum ServerConnectionState: Equatable {
+        case checking
+        case ready(sessionCount: Int)
+        case readyNoSessions
+        case unauthorized
+        case contextMismatch(String)
+        case unsupportedServer(String)
+        case unreachable(String)
+        case serverError(String)
+    }
+
     var sessions: [Session] = []
     var isLoading = false
     var showError = false
     var errorMessage = ""
+    var connectionState: ServerConnectionState = .checking
+    var diagnostics: DaemonDiagnosticsResponse?
+    var hasValidatedCapabilities = false
 
     private let api = TmuxChatAPI.shared
 
@@ -645,49 +777,160 @@ class SessionListViewModel {
         defer { isLoading = false }
 
         do {
+            if !hasValidatedCapabilities {
+                let caps = try await api.getCapabilities()
+                guard caps.endpoints.diagnostics else {
+                    connectionState = .unsupportedServer(
+                        "tmux-chatd \(caps.version) does not expose diagnostics. Upgrade host tmux-chatd to continue."
+                    )
+                    updateActiveServerConnectionState("unsupported_server")
+                    sessions = []
+                    return
+                }
+                hasValidatedCapabilities = true
+            }
+
             sessions = try await api.listSessions()
-        } catch let error as APIError {
-            if case .unauthorized = error {
+
+            diagnostics = try await api.getDiagnostics()
+            if var active = ServerConfigManager.shared.activeServer, let diagnostics {
+                active.lastVerifiedDaemonUser = diagnostics.daemonUser
+                active.lastConnectionState = sessions.isEmpty ? "ready_no_sessions" : "ready"
+                active.lastVerifiedAt = Date()
+                ServerConfigManager.shared.updateServer(active)
+            }
+            if let diagnostics,
+               let expectedUser = ServerConfigManager.shared.activeServer?.sshUsername?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !expectedUser.isEmpty,
+               diagnostics.daemonUser != expectedUser {
+                connectionState = .contextMismatch(
+                    "tmux-chatd is running as \(diagnostics.daemonUser), but this server was onboarded with SSH user \(expectedUser). Re-pair using the tmux owner account."
+                )
+                updateActiveServerConnectionState("context_mismatch")
                 return
             }
+
+            if sessions.isEmpty {
+                connectionState = .readyNoSessions
+                updateActiveServerConnectionState("ready_no_sessions")
+            } else {
+                connectionState = .ready(sessionCount: sessions.count)
+                updateActiveServerConnectionState("ready")
+            }
+        } catch let error as APIError {
+            if case .unauthorized = error {
+                connectionState = .unauthorized
+                updateActiveServerConnectionState("unauthorized")
+                sessions = []
+                diagnostics = nil
+                return
+            }
+            if case .networkError(let underlying) = error {
+                connectionState = .unreachable(underlying.localizedDescription)
+                updateActiveServerConnectionState("unreachable")
+                sessions = []
+                diagnostics = nil
+                return
+            }
+            if case .serverError(let message) = error, message.contains("HTTP 404") {
+                connectionState = .unsupportedServer(
+                    "Current host tmux-chatd is missing required endpoints (/capabilities or /diagnostics). Upgrade host tmux-chatd, then retry."
+                )
+                updateActiveServerConnectionState("unsupported_server")
+                sessions = []
+                diagnostics = nil
+                return
+            }
+            connectionState = .serverError(error.localizedDescription)
+            updateActiveServerConnectionState("server_error")
             errorMessage = error.localizedDescription
             showError = true
+            sessions = []
+            diagnostics = nil
         } catch {
+            connectionState = .serverError(error.localizedDescription)
+            updateActiveServerConnectionState("server_error")
             errorMessage = error.localizedDescription
             showError = true
+            sessions = []
+            diagnostics = nil
         }
     }
 
-    func createSession(name: String, cwd: String) async {
+    var canCreateSession: Bool {
+        switch connectionState {
+        case .ready, .readyNoSessions:
+            return true
+        default:
+            return false
+        }
+    }
+
+    func createSession(name: String, cwd: String) async -> Bool {
+        guard canCreateSession else {
+            return false
+        }
         do {
             try await api.createSession(name: name, cwd: cwd)
             await loadSessions()
+            return true
         } catch let error as APIError {
             if case .unauthorized = error {
-                return
+                connectionState = .unauthorized
+                updateActiveServerConnectionState("unauthorized")
+                return false
             }
+            if case .networkError(let underlying) = error {
+                connectionState = .unreachable(underlying.localizedDescription)
+                updateActiveServerConnectionState("unreachable")
+                errorMessage = underlying.localizedDescription
+                showError = true
+                return false
+            }
+            connectionState = .serverError(error.localizedDescription)
+            updateActiveServerConnectionState("server_error")
             errorMessage = error.localizedDescription
             showError = true
+            return false
         } catch {
+            connectionState = .serverError(error.localizedDescription)
+            updateActiveServerConnectionState("server_error")
             errorMessage = error.localizedDescription
             showError = true
+            return false
         }
     }
 
     func deletePane(target: String) async {
+        guard canCreateSession else {
+            return
+        }
         do {
             try await api.deletePane(target: target)
             await loadSessions()
         } catch let error as APIError {
             if case .unauthorized = error {
+                connectionState = .unauthorized
+                updateActiveServerConnectionState("unauthorized")
                 return
             }
+            connectionState = .serverError(error.localizedDescription)
+            updateActiveServerConnectionState("server_error")
             errorMessage = error.localizedDescription
             showError = true
         } catch {
+            connectionState = .serverError(error.localizedDescription)
+            updateActiveServerConnectionState("server_error")
             errorMessage = error.localizedDescription
             showError = true
         }
+    }
+
+    private func updateActiveServerConnectionState(_ state: String) {
+        guard var active = ServerConfigManager.shared.activeServer else { return }
+        active.lastConnectionState = state
+        active.lastVerifiedAt = Date()
+        ServerConfigManager.shared.updateServer(active)
     }
 }
 

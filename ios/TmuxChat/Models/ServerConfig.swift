@@ -15,6 +15,10 @@ struct ServerConfig: Codable, Identifiable, Equatable {
     var serverName: String
     var deviceApiToken: String?
     var sshCredentialId: String?
+    var sshUsername: String?
+    var lastVerifiedDaemonUser: String?
+    var lastConnectionState: String?
+    var lastVerifiedAt: Date?
     var needsPushRebind: Bool
     var registeredAt: Date
 
@@ -32,6 +36,10 @@ struct ServerConfig: Codable, Identifiable, Equatable {
         serverName: String,
         deviceApiToken: String? = nil,
         sshCredentialId: String? = nil,
+        sshUsername: String? = nil,
+        lastVerifiedDaemonUser: String? = nil,
+        lastConnectionState: String? = nil,
+        lastVerifiedAt: Date? = nil,
         needsPushRebind: Bool = false,
         registeredAt: Date
     ) {
@@ -42,6 +50,10 @@ struct ServerConfig: Codable, Identifiable, Equatable {
         self.serverName = serverName
         self.deviceApiToken = deviceApiToken
         self.sshCredentialId = sshCredentialId
+        self.sshUsername = sshUsername
+        self.lastVerifiedDaemonUser = lastVerifiedDaemonUser
+        self.lastConnectionState = lastConnectionState
+        self.lastVerifiedAt = lastVerifiedAt
         self.needsPushRebind = needsPushRebind
         self.registeredAt = registeredAt
     }
@@ -55,6 +67,10 @@ struct ServerConfig: Codable, Identifiable, Equatable {
         case serverName
         case deviceApiToken
         case sshCredentialId
+        case sshUsername
+        case lastVerifiedDaemonUser
+        case lastConnectionState
+        case lastVerifiedAt
         case needsPushRebind
         case registeredAt
     }
@@ -69,6 +85,10 @@ struct ServerConfig: Codable, Identifiable, Equatable {
         serverName = try container.decode(String.self, forKey: .serverName)
         deviceApiToken = try container.decodeIfPresent(String.self, forKey: .deviceApiToken)
         sshCredentialId = try container.decodeIfPresent(String.self, forKey: .sshCredentialId)
+        sshUsername = try container.decodeIfPresent(String.self, forKey: .sshUsername)
+        lastVerifiedDaemonUser = try container.decodeIfPresent(String.self, forKey: .lastVerifiedDaemonUser)
+        lastConnectionState = try container.decodeIfPresent(String.self, forKey: .lastConnectionState)
+        lastVerifiedAt = try container.decodeIfPresent(Date.self, forKey: .lastVerifiedAt)
         needsPushRebind = try container.decodeIfPresent(Bool.self, forKey: .needsPushRebind) ?? false
         registeredAt = try container.decode(Date.self, forKey: .registeredAt)
     }
@@ -82,6 +102,10 @@ struct ServerConfig: Codable, Identifiable, Equatable {
         try container.encode(serverName, forKey: .serverName)
         try container.encodeIfPresent(deviceApiToken, forKey: .deviceApiToken)
         try container.encodeIfPresent(sshCredentialId, forKey: .sshCredentialId)
+        try container.encodeIfPresent(sshUsername, forKey: .sshUsername)
+        try container.encodeIfPresent(lastVerifiedDaemonUser, forKey: .lastVerifiedDaemonUser)
+        try container.encodeIfPresent(lastConnectionState, forKey: .lastConnectionState)
+        try container.encodeIfPresent(lastVerifiedAt, forKey: .lastVerifiedAt)
         try container.encode(needsPushRebind, forKey: .needsPushRebind)
         try container.encode(registeredAt, forKey: .registeredAt)
     }

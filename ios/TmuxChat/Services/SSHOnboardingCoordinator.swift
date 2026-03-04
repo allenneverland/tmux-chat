@@ -25,6 +25,7 @@ enum SSHOnboardingStep: String {
     case connectingSSH
     case verifyingTmuxChatd
     case installingTmuxChatd
+    case startingTmuxChatd
     case detectingPlatform
     case installingHostAgent
     case issuingControlToken
@@ -73,6 +74,8 @@ final class SSHOnboardingCoordinator {
             return "Checking tmux-chatd on host"
         case .installingTmuxChatd:
             return "Installing tmux-chatd"
+        case .startingTmuxChatd:
+            return "Starting tmux-chatd"
         case .detectingPlatform:
             return "Detecting host platform"
         case .installingHostAgent:
@@ -111,6 +114,7 @@ final class SSHOnboardingCoordinator {
 
             step = .connectingSSH
             _ = try await sshExecutor.run(command: "echo ssh-ok", on: connectionSpec)
+            try await validateSSHUser(on: connectionSpec)
 
             step = .verifyingTmuxChatd
             let hasTmuxChatd = (try? await sshExecutor.run(
@@ -121,6 +125,14 @@ final class SSHOnboardingCoordinator {
                 step = .installingTmuxChatd
             }
             let tmuxChatdExecutable = try await installer.ensureTmuxChatdInstalled(on: connectionSpec)
+
+            step = .startingTmuxChatd
+            try await installer.ensureTmuxChatdRunning(
+                on: connectionSpec,
+                executable: tmuxChatdExecutable,
+                pushServerBaseURL: pushServerURL,
+                expectedUsername: connectionSpec.username
+            )
 
             step = .detectingPlatform
             let platform = try await installer.detectPlatform(on: connectionSpec)
@@ -173,6 +185,7 @@ final class SSHOnboardingCoordinator {
                 serverName: finalServerName,
                 deviceApiToken: registration.deviceApiToken,
                 sshCredentialId: credentialId,
+                sshUsername: connectionSpec.username,
                 needsPushRebind: false,
                 registeredAt: Date()
             )
@@ -181,6 +194,13 @@ final class SSHOnboardingCoordinator {
 
             step = .verifyingControlPlane
             _ = try await api.listSessions()
+            if let diagnostics = try? await api.getDiagnostics() {
+                var updated = config
+                updated.lastVerifiedDaemonUser = diagnostics.daemonUser
+                updated.lastConnectionState = "ready"
+                updated.lastVerifiedAt = Date()
+                ServerConfigManager.shared.updateServer(updated)
+            }
 
             step = .completed
             return true
@@ -257,6 +277,19 @@ final class SSHOnboardingCoordinator {
         return value
     }
 
+    private func validateSSHUser(on connection: SSHConnectionSpec) async throws {
+        let result = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote("id -un"))", on: connection)
+        let remoteUser = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !remoteUser.isEmpty else {
+            throw APIError.serverError("Unable to determine remote SSH user")
+        }
+        guard remoteUser == connection.username else {
+            throw APIError.serverError(
+                "SSH user mismatch. Connected as \(remoteUser), but form username is \(connection.username)."
+            )
+        }
+    }
+
     private func issueDeviceCredentials(
         on connection: SSHConnectionSpec,
         tmuxChatdExecutable: String
@@ -290,7 +323,13 @@ final class SSHOnboardingCoordinator {
     private func validatePushServerBaseURL() throws -> String {
         let value = api.pushServerBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else {
-            throw APIError.serverError("Push server base URL is not configured")
+            throw APIError.serverError("Push server base URL is not configured or invalid. In Config.xcconfig, use https:/$()/host format.")
+        }
+        guard let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(),
+              (scheme == "http" || scheme == "https"),
+              url.host != nil else {
+            throw APIError.serverError("Push server base URL is invalid: \(value)")
         }
         return value
     }
@@ -312,14 +351,34 @@ final class SSHOnboardingCoordinator {
             throw APIError.serverError("Server URL is required")
         }
 
-        guard let url = URL(string: trimmed),
-              let scheme = url.scheme?.lowercased(),
+        guard var components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(),
               (scheme == "http" || scheme == "https"),
-              url.host != nil else {
+              components.host != nil else {
             throw APIError.serverError("Enter a valid http(s) server URL")
         }
 
-        return trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
+        let rawPath = components.percentEncodedPath
+        let normalizedPath = rawPath.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalizedPath == "/healthz" || normalizedPath == "/healthz/" || normalizedPath == "/" {
+            components.percentEncodedPath = ""
+        } else if !normalizedPath.isEmpty {
+            throw APIError.serverError("Server URL should not include a path. Use only scheme://host[:port]")
+        }
+
+        if components.query != nil || components.fragment != nil {
+            throw APIError.serverError("Server URL should not include query or fragment")
+        }
+
+        components.scheme = scheme
+        components.query = nil
+        components.fragment = nil
+        components.user = nil
+        components.password = nil
+        guard let normalized = components.string else {
+            throw APIError.serverError("Enter a valid http(s) server URL")
+        }
+        return normalized.hasSuffix("/") ? String(normalized.dropLast()) : normalized
     }
 
     private func normalizedServerName(_ raw: String, fallbackURL: String) -> String {

@@ -117,3 +117,83 @@ printf '\a'
 tmux-chatd devices list
 tmux-chatd devices revoke <device-id>
 ```
+
+## 8. tmux-chatd 發布流程（GitHub Release）
+
+當你修改了 `tmux-chatd` 或 `host-agent`，且希望：
+
+- iOS onboarding 的「一鍵安裝」抓到新版本
+- GitHub Release 產生新的 Linux/macOS tar.gz 資產
+
+就必須跑一次正式發版（tag + release workflow）。
+
+### 8.1 發版前檢查
+
+在本機確認以下項目：
+
+```bash
+git status
+```
+
+- 工作樹乾淨（避免把半成品一起發布）
+- 主要變更已合併到要發版的分支（通常 `master`）
+
+建議至少跑：
+
+```bash
+xcodebuild -project ios/TmuxChat.xcodeproj -scheme TmuxChat -destination 'generic/platform=iOS Simulator' build
+```
+
+（如本機有 Rust 環境，也建議跑 `cargo build -p tmux-chatd -p host-agent`）
+
+### 8.2 建立版本 tag
+
+本專案 `release.yml` 會在 `v*` tag 被 push 時觸發。
+
+```bash
+git tag v1.0.6
+git push origin v1.0.6
+```
+
+### 8.3 Workflow 自動做的事
+
+`.github/workflows/release.yml` 會：
+
+1. 交叉編譯 `tmux-chatd`、`host-agent`
+2. 打包並上傳 tar.gz 資產到 GitHub Release
+3. 若有設定 `HOMEBREW_TAP_TOKEN`，自動更新 Homebrew tap Formula
+
+目前輸出資產（5 組 target）：
+
+- `tmux-chatd-linux-x86_64-gnu.tar.gz`
+- `tmux-chatd-linux-aarch64-gnu.tar.gz`
+- `tmux-chatd-linux-x86_64-musl.tar.gz`
+- `tmux-chatd-darwin-x86_64.tar.gz`
+- `tmux-chatd-darwin-aarch64.tar.gz`
+
+以及對應的 `host-agent-*.tar.gz`。
+
+### 8.4 發版後檢查（必要）
+
+1. 到 GitHub Releases 確認該 tag 的資產完整存在。  
+2. 在主機驗證新 API（本版 iOS 依賴）：
+
+```bash
+curl -i http://127.0.0.1:8787/healthz
+curl -i http://127.0.0.1:8787/capabilities
+curl -i -H "Authorization: Bearer <device_token>" http://127.0.0.1:8787/diagnostics
+```
+
+3. iOS 端重新執行 `Reconnect & Re-pair`，確認：
+   - 不再出現 `Server Upgrade Required`
+   - sessions 可正常列出
+   - `New Session` 可成功建立
+
+### 8.5 常見失敗與處理
+
+- **Release workflow 成功，但 iOS 仍抓舊版**
+  - 檢查 iOS 是連到哪台主機、哪個 `tmux-chatd` binary（systemd/launchd 可能還在舊路徑）
+- **找不到對應 Linux asset**
+  - 檢查 Release 是否真的有 `tmux-chatd-linux-x86_64-gnu.tar.gz` 或 `...-musl.tar.gz`
+- **`/capabilities` 或 `/diagnostics` 是 404**
+  - 代表主機仍在跑舊版 `tmux-chatd`，需升級並重啟服務

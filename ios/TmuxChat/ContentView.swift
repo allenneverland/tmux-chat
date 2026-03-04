@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var configManager = ServerConfigManager.shared
     @State private var isCheckingAuth = true
     @State private var showOnboarding = false
+    @State private var hasPresentedAutoOnboardingForCurrentAuthError = false
 
     var body: some View {
         Group {
@@ -36,9 +37,15 @@ struct ContentView: View {
             }
         }
         .onChange(of: api.authErrorType) { _, errorType in
-            guard let errorType else { return }
+            guard configManager.isConfigured, !configManager.isDemoMode else { return }
+            guard let errorType else {
+                hasPresentedAutoOnboardingForCurrentAuthError = false
+                return
+            }
             switch errorType {
             case .deviceTokenInvalid:
+                guard !showOnboarding, !hasPresentedAutoOnboardingForCurrentAuthError else { return }
+                hasPresentedAutoOnboardingForCurrentAuthError = true
                 showOnboarding = true
             }
         }
@@ -46,11 +53,8 @@ struct ContentView: View {
             SSHOnboardingView {
                 Task {
                     await checkAuthentication()
+                    NotificationCenter.default.post(name: .authenticationRestored, object: nil)
                 }
-            }
-            .onDisappear {
-                api.clearAuthError()
-                NotificationCenter.default.post(name: .authenticationRestored, object: nil)
             }
         }
     }

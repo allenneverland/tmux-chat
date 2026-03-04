@@ -11,7 +11,7 @@ struct CreateSessionView: View {
     @State private var cwd = ""
     @State private var isCreating = false
 
-    let onCreate: (String, String) async -> Void
+    let onCreate: (String, String) async -> Bool
 
     var body: some View {
         NavigationStack {
@@ -42,9 +42,11 @@ struct CreateSessionView: View {
                     Button("Create") {
                         Task {
                             isCreating = true
-                            await onCreate(name, cwd)
+                            let created = await onCreate(name, cwd)
                             isCreating = false
-                            dismiss()
+                            if created {
+                                dismiss()
+                            }
                         }
                     }
                     .disabled(name.isEmpty || cwd.isEmpty || isCreating)
@@ -58,5 +60,6 @@ struct CreateSessionView: View {
 #Preview {
     CreateSessionView { name, cwd in
         print("Create: \(name) at \(cwd)")
+        return true
     }
 }

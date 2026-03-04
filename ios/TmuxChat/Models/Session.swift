@@ -130,6 +130,39 @@ struct OutputResponse: Codable {
     let output: String
 }
 
+struct DaemonCapabilitiesResponse: Codable {
+    let daemon: String
+    let version: String
+    let endpoints: DaemonEndpointCapabilities
+}
+
+struct DaemonEndpointCapabilities: Codable {
+    let healthz: Bool
+    let capabilities: Bool
+    let diagnostics: Bool
+    let sessions: Bool
+    let panes: Bool
+    let notify: Bool
+}
+
+struct DaemonDiagnosticsResponse: Codable {
+    let daemonUser: String
+    let tmuxBinary: String?
+    let tmuxSocket: String?
+    let sessionCount: Int
+    let canListSessions: Bool
+    let lastTmuxError: String?
+
+    enum CodingKeys: String, CodingKey {
+        case daemonUser = "daemon_user"
+        case tmuxBinary = "tmux_binary"
+        case tmuxSocket = "tmux_socket"
+        case sessionCount = "session_count"
+        case canListSessions = "can_list_sessions"
+        case lastTmuxError = "last_tmux_error"
+    }
+}
+
 struct ErrorResponse: Codable {
     let error: String
 }
