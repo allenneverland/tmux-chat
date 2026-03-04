@@ -17,4 +17,4 @@ Access securely from anywhere using VPN or Cloudflare Tunnel.
 • tmux
 • reattachd (free, open source)
 
-Setup guide: https://github.com/kumabook/Reattach
+Setup guide: https://github.com/allenneverland/Reattach

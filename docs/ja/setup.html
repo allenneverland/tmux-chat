@@ -255,7 +255,7 @@
             <div class="nav-links">
                 <a href="/ja/">ホーム</a>
                 <a href="/ja/setup.html" class="active">セットアップ</a>
-                <a href="https://github.com/kumabook/Reattach">GitHub</a>
+                <a href="https://github.com/allenneverland/Reattach">GitHub</a>
                 <a href="/setup.html">English</a>
             </div>
         </nav>
@@ -274,7 +274,7 @@
                 <span class="step-title">reattachdをインストール</span>
                 <div class="step-content">
                     <p>お使いのコンピュータで以下のコマンドを実行します：</p>
-                    <pre><code>curl -fsSL https://raw.githubusercontent.com/kumabook/Reattach/main/install.sh | sh</code></pre>
+                    <pre><code>curl -fsSL https://raw.githubusercontent.com/allenneverland/Reattach/main/install.sh | sh</code></pre>
                 </div>
             </div>
 
@@ -287,13 +287,13 @@
 mkdir -p ~/Library/Logs/Reattach
 
 # plistファイルを作成
-cat > ~/Library/LaunchAgents/com.kumabook.reattachd.plist << 'EOF'
+cat > ~/Library/LaunchAgents/com.allenneverland.reattachd.plist << 'EOF'
 &lt;?xml version="1.0" encoding="UTF-8"?&gt;
 &lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
 &lt;plist version="1.0"&gt;
 &lt;dict&gt;
     &lt;key&gt;Label&lt;/key&gt;
-    &lt;string&gt;com.kumabook.reattachd&lt;/string&gt;
+    &lt;string&gt;com.allenneverland.reattachd&lt;/string&gt;
     &lt;key&gt;ProgramArguments&lt;/key&gt;
     &lt;array&gt;
         &lt;string&gt;/usr/local/bin/reattachd&lt;/string&gt;
@@ -321,7 +321,7 @@ cat > ~/Library/LaunchAgents/com.kumabook.reattachd.plist << 'EOF'
 EOF
 
 # 読み込んで開始
-launchctl load ~/Library/LaunchAgents/com.kumabook.reattachd.plist</code></pre>
+launchctl load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist</code></pre>
 
                     <h3>Linux (systemd)</h3>
                     <pre><code># サービスファイルを作成
@@ -420,7 +420,7 @@ URL: https://your-domain.com:8787</code></pre>
             </div>
 
             <div class="note">
-                <p><strong>サポートが必要ですか？</strong> 詳細やトラブルシューティングについては<a href="https://github.com/kumabook/Reattach">GitHubリポジトリ</a>をご覧ください。</p>
+                <p><strong>サポートが必要ですか？</strong> 詳細やトラブルシューティングについては<a href="https://github.com/allenneverland/Reattach">GitHubリポジトリ</a>をご覧ください。</p>
             </div>
         </div>
     </main>
@@ -428,8 +428,8 @@ URL: https://your-domain.com:8787</code></pre>
     <footer>
         <div class="container">
             <p>
-                Built with &#10084; by <a href="https://github.com/kumabook">kumabook</a> ・
-                <a href="https://github.com/kumabook/Reattach">Source Code</a> ・
+                Built with &#10084; by <a href="https://github.com/allenneverland">allenneverland</a> ・
+                <a href="https://github.com/allenneverland/Reattach">Source Code</a> ・
                 MIT License
             </p>
         </div>

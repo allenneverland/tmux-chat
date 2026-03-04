@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.kumabook.cloudflared-reattach</string>
+    <string>com.allenneverland.cloudflared-reattach</string>
     <key>ProgramArguments</key>
     <array>
         <string>{{CLOUDFLARED_PATH}}</string>

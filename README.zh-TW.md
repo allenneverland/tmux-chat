@@ -61,7 +61,7 @@ Claude/Codex hook --> reattachd notify --> push-server --> APNs --> iOS
 方案 A：Homebrew（macOS）
 
 ```bash
-brew tap kumabook/reattach
+brew tap allenneverland/reattach
 brew install reattachd
 brew services start reattachd
 ```
@@ -69,7 +69,7 @@ brew services start reattachd
 方案 B：安裝腳本（macOS / Linux）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kumabook/Reattach/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/allenneverland/Reattach/main/install.sh | sh
 ```
 
 ### 2. 啟動 reattachd 服務
@@ -78,8 +78,8 @@ macOS（launchd 範例）：
 
 ```bash
 mkdir -p ~/Library/Logs/Reattach
-# create and load ~/Library/LaunchAgents/com.kumabook.reattachd.plist
-launchctl load ~/Library/LaunchAgents/com.kumabook.reattachd.plist
+# create and load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist
+launchctl load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist
 ```
 
 Linux（systemd 範例）：
@@ -159,7 +159,7 @@ reattachd devices issue --name "<device-name>" --json
 ### Build
 
 ```bash
-git clone https://github.com/kumabook/Reattach.git
+git clone https://github.com/allenneverland/Reattach.git
 cd Reattach
 
 cp config.local.mk.sample config.local.mk

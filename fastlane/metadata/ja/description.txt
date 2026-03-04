@@ -17,4 +17,4 @@ VPNやCloudflare Tunnelを使えば、外出先からも安全にアクセスで
 • tmux
 • reattachd（無料・オープンソース）
 
-セットアップ方法: https://github.com/kumabook/Reattach
+セットアップ方法: https://github.com/allenneverland/Reattach

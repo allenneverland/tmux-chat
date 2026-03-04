@@ -11,4 +11,4 @@ New baseline:
 - Claude/Codex hooks compatibility remains via `reattachd notify`.
 
 Migration guide:
-https://github.com/kumabook/Reattach/blob/main/docs/breaking-changes-flag-day-2026.md
+https://github.com/allenneverland/Reattach/blob/main/docs/breaking-changes-flag-day-2026.md

@@ -120,14 +120,14 @@ curl -fsS http://127.0.0.1:8790/metrics.json | head
 Homebrew（macOS）：
 
 ```bash
-brew tap kumabook/reattach
+brew tap allenneverland/reattach
 brew install reattachd
 ```
 
 或 install script（macOS/Linux）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kumabook/Reattach/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/allenneverland/Reattach/main/install.sh | sh
 ```
 
 ### 5.2 macOS（launchd）快速部署

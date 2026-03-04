@@ -41,32 +41,32 @@ install: build
 	     -e 's|{{LOG_DIR}}|$(LOG_DIR)|g' \
 	     -e 's|{{PUSH_SERVER_BASE_URL}}|$(PUSH_SERVER_BASE_URL)|g' \
 	     -e 's|{{PUSH_SERVER_COMPAT_NOTIFY_TOKEN}}|$(PUSH_SERVER_COMPAT_NOTIFY_TOKEN)|g' \
-	     launchd/com.kumabook.reattachd.plist > $(LAUNCH_AGENTS_DIR)/com.kumabook.reattachd.plist
+	     launchd/com.allenneverland.reattachd.plist > $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist
 	@sed -e 's|{{CLOUDFLARED_PATH}}|$(CLOUDFLARED_PATH)|g' \
 	     -e 's|{{LOG_DIR}}|$(LOG_DIR)|g' \
-	     launchd/com.kumabook.cloudflared-reattach.plist > $(LAUNCH_AGENTS_DIR)/com.kumabook.cloudflared-reattach.plist
+	     launchd/com.allenneverland.cloudflared-reattach.plist > $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist
 	@echo "Installed launchd services"
-	@echo "  - $(LAUNCH_AGENTS_DIR)/com.kumabook.reattachd.plist"
-	@echo "  - $(LAUNCH_AGENTS_DIR)/com.kumabook.cloudflared-reattach.plist"
+	@echo "  - $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist"
+	@echo "  - $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist"
 	@echo ""
 	@echo "Run 'make start' to start services"
 
 # Uninstall launchd services
 uninstall: stop
-	@rm -f $(LAUNCH_AGENTS_DIR)/com.kumabook.reattachd.plist
-	@rm -f $(LAUNCH_AGENTS_DIR)/com.kumabook.cloudflared-reattach.plist
+	@rm -f $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist
+	@rm -f $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist
 	@echo "Uninstalled launchd services"
 
 # Start services
 start:
-	@launchctl load $(LAUNCH_AGENTS_DIR)/com.kumabook.reattachd.plist 2>/dev/null || true
-	@launchctl load $(LAUNCH_AGENTS_DIR)/com.kumabook.cloudflared-reattach.plist 2>/dev/null || true
+	@launchctl load $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist 2>/dev/null || true
+	@launchctl load $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist 2>/dev/null || true
 	@echo "Started services"
 
 # Stop services
 stop:
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.kumabook.reattachd.plist 2>/dev/null || true
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.kumabook.cloudflared-reattach.plist 2>/dev/null || true
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist 2>/dev/null || true
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist 2>/dev/null || true
 	@echo "Stopped services"
 
 # Restart services
@@ -92,7 +92,7 @@ logs-follow:
 # Check service status
 status:
 	@echo "=== Service Status ==="
-	@launchctl list | grep -E "kumabook\.(reattachd|cloudflared)" || echo "No services running"
+	@launchctl list | grep -E "allenneverland\.(reattachd|cloudflared)" || echo "No services running"
 	@echo ""
 	@echo "=== Process Check ==="
 	@ps aux | grep -E "(reattachd|cloudflared.*reattach)" | grep -v grep || echo "No processes found"

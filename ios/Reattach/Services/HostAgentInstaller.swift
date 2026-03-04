@@ -75,7 +75,7 @@ final class HostAgentInstaller {
         pushServerBaseURL: String,
         releaseAssetName: String
     ) async throws {
-        let url = "https://github.com/kumabook/Reattach/releases/latest/download/\(releaseAssetName)"
+        let url = "https://github.com/allenneverland/Reattach/releases/latest/download/\(releaseAssetName)"
         let script = """
         set -eu
         TMPDIR="$(mktemp -d)"

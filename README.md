@@ -61,7 +61,7 @@ Full deployment guide (Traditional Chinese):
 Option A: Homebrew (macOS)
 
 ```bash
-brew tap kumabook/reattach
+brew tap allenneverland/reattach
 brew install reattachd
 brew services start reattachd
 ```
@@ -69,7 +69,7 @@ brew services start reattachd
 Option B: install script (macOS / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kumabook/Reattach/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/allenneverland/Reattach/main/install.sh | sh
 ```
 
 ### 2. Start reattachd service
@@ -78,8 +78,8 @@ macOS (launchd example):
 
 ```bash
 mkdir -p ~/Library/Logs/Reattach
-# create and load ~/Library/LaunchAgents/com.kumabook.reattachd.plist
-launchctl load ~/Library/LaunchAgents/com.kumabook.reattachd.plist
+# create and load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist
+launchctl load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist
 ```
 
 Linux (systemd example):
@@ -159,7 +159,7 @@ Then add the server in app using:
 ### Build
 
 ```bash
-git clone https://github.com/kumabook/Reattach.git
+git clone https://github.com/allenneverland/Reattach.git
 cd Reattach
 
 cp config.local.mk.sample config.local.mk

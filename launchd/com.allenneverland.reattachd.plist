@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.kumabook.reattachd</string>
+    <string>com.allenneverland.reattachd</string>
     <key>ProgramArguments</key>
     <array>
         <string>{{REATTACHD_PATH}}</string>

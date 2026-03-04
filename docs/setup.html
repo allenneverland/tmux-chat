@@ -246,7 +246,7 @@
             <div class="nav-links">
                 <a href="/">Home</a>
                 <a href="/setup.html" class="active">Setup</a>
-                <a href="https://github.com/kumabook/Reattach">GitHub</a>
+                <a href="https://github.com/allenneverland/Reattach">GitHub</a>
                 <a href="/ja/setup.html">日本語</a>
             </div>
         </nav>
@@ -265,7 +265,7 @@
                 <span class="step-title">Install reattachd</span>
                 <div class="step-content">
                     <p>Run this command on your computer:</p>
-                    <pre><code>curl -fsSL https://raw.githubusercontent.com/kumabook/Reattach/main/install.sh | sh</code></pre>
+                    <pre><code>curl -fsSL https://raw.githubusercontent.com/allenneverland/Reattach/main/install.sh | sh</code></pre>
                 </div>
             </div>
 
@@ -278,13 +278,13 @@
 mkdir -p ~/Library/Logs/Reattach
 
 # Create plist file
-cat > ~/Library/LaunchAgents/com.kumabook.reattachd.plist << 'EOF'
+cat > ~/Library/LaunchAgents/com.allenneverland.reattachd.plist << 'EOF'
 &lt;?xml version="1.0" encoding="UTF-8"?&gt;
 &lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
 &lt;plist version="1.0"&gt;
 &lt;dict&gt;
     &lt;key&gt;Label&lt;/key&gt;
-    &lt;string&gt;com.kumabook.reattachd&lt;/string&gt;
+    &lt;string&gt;com.allenneverland.reattachd&lt;/string&gt;
     &lt;key&gt;ProgramArguments&lt;/key&gt;
     &lt;array&gt;
         &lt;string&gt;/usr/local/bin/reattachd&lt;/string&gt;
@@ -312,7 +312,7 @@ cat > ~/Library/LaunchAgents/com.kumabook.reattachd.plist << 'EOF'
 EOF
 
 # Load and start
-launchctl load ~/Library/LaunchAgents/com.kumabook.reattachd.plist</code></pre>
+launchctl load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist</code></pre>
 
                     <h3>Linux (systemd)</h3>
                     <pre><code># Create service file
@@ -413,7 +413,7 @@ URL: https://your-domain.com:8787</code></pre>
             </div>
 
             <div class="note">
-                <p><strong>Need help?</strong> Check out the <a href="https://github.com/kumabook/Reattach">GitHub repository</a> for more details and troubleshooting.</p>
+                <p><strong>Need help?</strong> Check out the <a href="https://github.com/allenneverland/Reattach">GitHub repository</a> for more details and troubleshooting.</p>
             </div>
         </div>
     </main>
@@ -421,8 +421,8 @@ URL: https://your-domain.com:8787</code></pre>
     <footer>
         <div class="container">
             <p>
-                Built with ❤️ by <a href="https://github.com/kumabook">kumabook</a> ・
-                <a href="https://github.com/kumabook/Reattach">Source Code</a> ・
+                Built with ❤️ by <a href="https://github.com/allenneverland">allenneverland</a> ・
+                <a href="https://github.com/allenneverland/Reattach">Source Code</a> ・
                 MIT License
             </p>
         </div>
