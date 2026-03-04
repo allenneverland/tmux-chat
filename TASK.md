@@ -102,25 +102,25 @@ APNs payload：
 - [x] iOS CI 保持可編譯
 
 ### Phase 2 — Push Server 實作
-- [ ] 抽離 APNs 發送模組
-- [ ] 完成 pairing API
-- [ ] 完成 APNs device 註冊 API
-- [ ] 完成 bell/agent 事件 ingest API
-- [ ] 完成 mute 規則 API
-- [ ] 保留 invalid token 自動清理
+- [x] 抽離 APNs 發送模組
+- [x] 完成 pairing API
+- [x] 完成 APNs device 註冊 API
+- [x] 完成 bell/agent 事件 ingest API
+- [x] 完成 mute 規則 API
+- [x] 保留 invalid token 自動清理
 
 ### Phase 3 — Host Agent 實作
-- [ ] 完成 tmux bell hook 安裝與觸發上報
-- [ ] 完成 pairing 與 token 存放
-- [ ] 完成常駐服務（launchd user / systemd user）
-- [ ] 完成 best-effort 上報（失敗記 log）
+- [x] 完成 tmux bell hook 安裝與觸發上報
+- [x] 完成 pairing 與 token 存放
+- [x] 完成常駐服務（launchd user / systemd user）
+- [x] 完成 best-effort 上報（失敗記 log）
 
 ### Phase 4 — `reattachd` 收斂
-- [ ] 刪除 `/register` 與 setup token
-- [ ] 移除 `setup` CLI 與 QR 相關文案
-- [ ] 保留 `notify/hooks` 並改為轉送 push-server
-- [ ] 新增 `devices issue --json`
-- [ ] auth middleware 改為無條件驗證（移除 open mode）
+- [x] 刪除 `/register` 與 setup token
+- [x] 移除 `setup` CLI 與 QR 相關文案
+- [x] 保留 `notify/hooks` 並改為轉送 push-server
+- [x] 新增 `devices issue --json`
+- [x] auth middleware 改為無條件驗證（移除 open mode）
 
 ### Phase 5 — iOS Onboarding 改造
 - [x] 新增 SSH 新增主機流程
@@ -131,10 +131,10 @@ APNs payload：
 - [x] 移除 Cloudflare Service Token UI/邏輯
 
 ### Phase 6 — 通知導頁與靜音
-- [ ] 維持 `deviceId + paneTarget` 路由
-- [ ] 點擊通知切換 server 並導向 pane
-- [ ] pane 不存在時導向 session list 並提示
-- [ ] 新增靜音設定 UI（host/session/pane）
+- [x] 維持 `deviceId + paneTarget` 路由
+- [x] 點擊通知切換 server 並導向 pane
+- [x] pane 不存在時導向 session list 並提示
+- [x] 新增靜音設定 UI（host/session/pane）
 
 ### Phase 7 — 觀測與 SLO
 - [x] `push-server` 指標：
@@ -151,9 +151,9 @@ APNs payload：
 - [x] 建立 dashboard 與 alert
 
 ### Phase 8 — 文件與上線
-- [ ] 更新 README/docs：改為 SSH onboarding
-- [ ] 文件保留 Claude/Codex hooks 兼容說明
-- [ ] 發布 breaking changes 公告
+- [x] 更新 README/docs：改為 SSH onboarding
+- [x] 文件保留 Claude/Codex hooks 兼容說明
+- [x] 發布 breaking changes 公告
 - [ ] Flag Day 上線與 48 小時觀察
 
 ## 測試計畫

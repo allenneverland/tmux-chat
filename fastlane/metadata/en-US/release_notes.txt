@@ -1,1 +1,14 @@
-First release!
+Flag Day architecture migration release.
+
+Breaking changes:
+- QR onboarding has been removed.
+- Cloudflare Access Service Token compatibility mode has been removed.
+- Control APIs now require bearer token authentication (no open mode).
+
+New baseline:
+- SSH onboarding in app (installs/pairs host-agent).
+- Notification pipeline: tmux bell -> host-agent -> push-server -> APNs.
+- Claude/Codex hooks compatibility remains via `reattachd notify`.
+
+Migration guide:
+https://github.com/kumabook/Reattach/blob/main/docs/breaking-changes-flag-day-2026.md

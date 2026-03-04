@@ -367,10 +367,9 @@ sudo systemctl start reattachd</code></pre>
 
                     <h2 style="font-size: 1.2rem; margin-top: 32px; border: none; padding: 0;">リモートアクセス</h2>
 
-                    <h3>Cloudflare Tunnel + Zero Trust Access（推奨）</h3>
-                    <p>ポートを公開せずにリモートアクセスを実現します。<a href="https://developers.cloudflare.com/cloudflare-one/">Cloudflare Zero Trust</a>のAccess機能を使用することで、認証レイヤーを追加できます。</p>
+                    <h3>トンネル / プライベートネットワーク</h3>
+                    <p>iOSデバイスからホストへ安全に到達できるネットワーク経路を使用してください（VPN、Tailscale、Cloudflare Tunnel、リバースプロキシなど）。</p>
                     <pre><code>URL: https://your-domain.example.com</code></pre>
-                    <p><a href="/ja/cloudflare.html">Cloudflareの詳細なセットアップガイドはこちら &rarr;</a></p>
 
                     <h3>パブリックIP / ドメイン</h3>
                     <p>パブリックIPやドメインで直接公開します。</p>
@@ -384,14 +383,39 @@ URL: https://your-domain.com:8787</code></pre>
 
             <div class="step">
                 <span class="step-number">4</span>
-                <span class="step-title">デバイスを登録</span>
+                <span class="step-title">SSHオンボーディングでサーバーを追加</span>
                 <div class="step-content">
-                    <p>iOSデバイスを登録するためのQRコードを生成します：</p>
-                    <pre><code>reattachd setup --url &lt;your-url&gt;</code></pre>
-                    <p>Reattach iOSアプリでQRコードをスキャンして登録を完了します。</p>
-                    <div class="step-image">
-                        <img src="../images/scan.png" alt="QRコードスキャン画面">
-                    </div>
+                    <p>Reattach iOSアプリで<strong>Add Server via SSH</strong>を選択します。</p>
+                    <ol style="color: var(--text-secondary); padding-left: 24px; margin-bottom: 0;">
+                        <li>Control URL（reattachd URL）を入力します。</li>
+                        <li>SSHのホスト、ポート、ユーザー名、認証情報を入力します。</li>
+                        <li>Connect and Install をタップします。</li>
+                    </ol>
+                    <p>アプリが <code>host-agent</code> のインストール、push-server とのペアリング、APNs登録、サーバー情報保存を自動で実行します。</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">5</span>
+                <span class="step-title">コーディングエージェント通知を設定（任意）</span>
+                <div class="step-content">
+                    <p><strong>推奨:</strong> Claude Code / Codex hooks を自動設定:</p>
+                    <pre><code>reattachd hooks install</code></pre>
+
+                    <p><strong>手動設定:</strong></p>
+                    <p>Claude Code (<code>~/.claude/settings.json</code>) には、<code>hooks.Stop</code> (matcher: <code>""</code>) と <code>hooks.Notification</code> (matcher: <code>"permission_prompt"</code>) の両方を追加し、command は <code>reattachd notify</code> を指定してください。</p>
+                    <p>Codex (<code>~/.codex/config.toml</code>) にはトップレベルで以下を設定してください:</p>
+                    <pre><code>notify = ["reattachd", "notify"]</code></pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">6</span>
+                <span class="step-title">高度な代替手順: 手動でデバイストークンを発行</span>
+                <div class="step-content">
+                    <p>SSHオンボーディングが一時的に使えない場合は、ホストで直接認証情報を発行できます：</p>
+                    <pre><code>reattachd devices issue --name "&lt;device-name&gt;" --json</code></pre>
+                    <p>その後、アプリで <code>device_id</code> と <code>device_token</code> を使って手動追加してください。</p>
                 </div>
             </div>
 

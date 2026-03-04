@@ -813,11 +813,11 @@
                 </div>
                 <div class="feature-row">
                     <div class="feature-image">
-                        <img src="../images/scan.png" alt="QRコードセットアップ">
+                        <img src="../images/sessions.png" alt="SSHオンボーディング">
                     </div>
                     <div class="feature-content">
-                        <h3>かんたんセットアップ</h3>
-                        <p>QRコードをスキャンするだけで接続完了。MacやLinuxでコマンドを実行し、表示されたQRコードをアプリで読み取ればすぐに使えます。</p>
+                        <h3>SSHオンボーディング</h3>
+                        <p>アプリからSSHでホストを追加できます。Reattachが host-agent のインストール、通知ペアリング、認証情報保存までを一連で実行します。</p>
                     </div>
                 </div>
             </div>
@@ -929,6 +929,7 @@
                 <div class="architecture-notes">
                     <p><strong>Reattach</strong> — App Storeで入手できるiOSアプリ。iPhoneやiPadからtmuxセッションを表示・操作。</p>
                     <p><strong>reattachd</strong> — MacやLinuxにインストールする軽量デーモン。アプリとtmuxを接続するHTTP APIを提供。</p>
+                    <p><strong>host-agent + push-server</strong> — tmux bell とコーディングエージェント通知をAPNs経由で配信し、アプリを開いていない状態でも通知を受け取れます。</p>
                 </div>
             </div>
         </section>

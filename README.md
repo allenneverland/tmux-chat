@@ -1,373 +1,269 @@
 # Reattach
 
-**Reattach** is a remote tmux client for iOS — control your Mac's terminal sessions from anywhere.
+[English](./README.md) | [繁體中文](./README.zh-TW.md)
 
-With optional coding agent integration, get push notifications when Claude Code or other AI assistants need your input.
+**Reattach** is a remote tmux client for iOS.
+Control your Mac/Linux tmux sessions from anywhere, and receive push notifications when tmux bell or coding-agent events happen.
 
-## Concept
+## Flag Day Migration Notice
 
+This repository has migrated to SSH onboarding + host-agent pairing.
+
+- QR onboarding is removed.
+- Cloudflare Access Service Token compatibility mode is removed.
+- Claude/Codex `notify/hooks` compatibility is preserved.
+
+See the announcement: `docs/breaking-changes-flag-day-2026.md`.
+
+## Architecture
+
+Reattach now has two paths that work together:
+
+1. Control plane (iOS -> reattachd -> tmux)
+2. Notification plane (tmux bell / agent hook -> host-agent or reattachd notify -> push-server -> APNs -> iOS)
+
+```text
+Control Plane
+------------
+iOS App --HTTPS--> reattachd --local--> tmux
+
+Notification Plane
+------------------
+tmux alert-bell --> host-agent --> push-server --> APNs --> iOS
+Claude/Codex hook --> reattachd notify --> push-server --> APNs --> iOS
 ```
-┌─────────────────┐
-│   iOS App       │
-│  (iPhone/iPad)  │
-└────────┬────────┘
-         │ HTTPS
-         ▼
-┌─────────────────┐
-│ Cloudflare      │
-│ Tunnel          │
-└────────┬────────┘
-         │ localhost:8787
-         ▼
-┌─────────────────┐
-│ reattachd       │──────► tmux
-│ (Rust daemon)   │
-└─────────────────┘
-      Your Mac
-```
-
-- **Remote tmux access**: View and control tmux sessions from your iPhone/iPad
-- **Secure access**: Cloudflare Tunnel provides HTTPS without exposing ports
-- **Coding agent friendly**: Optional hooks for Claude Code / Codex push notifications
-- **Simple architecture**: reattachd is just a thin wrapper around tmux
 
 ## Components
 
 | Component | Description |
 |-----------|-------------|
-| `reattachd` | Rust daemon that exposes tmux sessions via HTTP API |
-| `ios/` | iOS app for remote session control |
-| `hooks/` | Optional hooks for coding agent notifications |
-| `launchd/` | macOS service configuration |
+| `reattachd` | Rust daemon exposing tmux control APIs (`sessions` / `panes`) |
+| `host-agent` | Host-side relay agent that reports tmux bell events to push-server |
+| `push-server` | APNs delivery service (pairing, device registration, mute rules, metrics) |
+| `ios/` | iOS app (SSH onboarding, remote tmux control, notification routing) |
+| `launchd/` | launchd templates for host services |
+| `ops/observability/` | Prometheus alert rules + Grafana dashboard templates |
 
 ## Requirements
 
-- macOS or Linux
+- macOS or Linux host
 - [tmux](https://github.com/tmux/tmux)
-- [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (optional, for remote access)
+- iOS device with notification permission enabled
+- SSH access from iOS device to host (network path is user choice: VPN, Tailscale, tunnel, etc.)
 
-## Installation
+Full deployment guide (Traditional Chinese):
+- `docs/deployment-three-systems.zh-TW.md`
 
-### 1. Install reattachd
+## Quick Start
 
-#### Option A: Homebrew (macOS)
+### 1. Install reattachd on the host
+
+Option A: Homebrew (macOS)
 
 ```bash
 brew tap kumabook/reattach
 brew install reattachd
-```
-
-To run it as a background service:
-
-```bash
 brew services start reattachd
 ```
 
-#### Option B: Install script (macOS / Linux)
+Option B: install script (macOS / Linux)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kumabook/Reattach/main/install.sh | sh
 ```
 
-### 2. Setup daemon
+### 2. Start reattachd service
 
-#### macOS (launchd)
+macOS (launchd example):
 
 ```bash
-# Create log directory
 mkdir -p ~/Library/Logs/Reattach
-
-# Create plist file
-cat > ~/Library/LaunchAgents/com.kumabook.reattachd.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.kumabook.reattachd</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/reattachd</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>~/Library/Logs/Reattach/reattachd.log</string>
-    <key>StandardErrorPath</key>
-    <string>~/Library/Logs/Reattach/reattachd.error.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>REATTACHD_PORT</key>
-        <string>8787</string>
-        <!-- Uncomment to allow local network access (default: 127.0.0.1) -->
-        <!-- <key>REATTACHD_BIND_ADDR</key> -->
-        <!-- <string>0.0.0.0</string> -->
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-    </dict>
-</dict>
-</plist>
-EOF
-
-# Load and start
+# create and load ~/Library/LaunchAgents/com.kumabook.reattachd.plist
 launchctl load ~/Library/LaunchAgents/com.kumabook.reattachd.plist
 ```
 
-#### Linux (systemd)
+Linux (systemd example):
 
 ```bash
-# Create service file
-sudo tee /etc/systemd/system/reattachd.service << 'EOF'
-[Unit]
-Description=Reattach Daemon
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/reattachd
-Restart=always
-Environment=REATTACHD_PORT=8787
-# Uncomment to allow local network access (default: 127.0.0.1)
-# Environment=REATTACHD_BIND_ADDR=0.0.0.0
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Enable and start
+# create and enable /etc/systemd/system/reattachd.service
 sudo systemctl daemon-reload
-sudo systemctl enable reattachd
-sudo systemctl start reattachd
+sudo systemctl enable --now reattachd
 ```
 
-### 3. Configure network access
+### 3. Choose network path for the control URL
 
-Choose how your iOS device will connect to reattachd:
+Examples:
 
-#### Local network
+- Local network: `http://192.168.x.x:8787`
+- VPN/Tailscale: `http://<private-ip>:8787`
+- Reverse proxy/tunnel with TLS: `https://your-domain.example.com`
 
-Use your machine's local IP address directly. No additional setup required.
+### 4. Add server from iOS via SSH onboarding
 
-```
-URL: http://192.168.x.x:8787
-```
+In the iOS app:
 
-#### VPN
+1. Tap `Add Server via SSH`.
+2. Enter control plane URL (reattachd URL).
+3. Enter SSH host/user/port and authentication.
+4. Continue setup.
 
-If you have a VPN setup, use the machine's IP address on the VPN network.
+The app will:
 
-```
-URL: http://<vpn-ip>:8787
-```
+- verify SSH access
+- install `host-agent` remotely
+- issue control credentials (`reattachd devices issue --json` on host)
+- run push pairing and APNs registration
+- save server configuration and verify tmux API
 
-#### Cloudflare Tunnel
+### 5. Optional: coding-agent notification hooks
 
-For secure remote access without exposing ports, set up [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/):
+Auto install:
 
 ```bash
-# Create tunnel
-cloudflared tunnel create reattach
-
-# Configure tunnel (edit ~/.cloudflared/config.yml)
-tunnel: reattach
-credentials-file: /path/to/credentials.json
-
-ingress:
-  - hostname: your-domain.example.com
-    service: http://localhost:8787
-  - service: http_status:404
-
-# Start tunnel
-cloudflared tunnel run reattach
+reattachd hooks install
 ```
 
+Manual setup:
+
+- Claude Code (`~/.claude/settings.json`):
+  - `hooks.Stop` matcher `""` command `reattachd notify`
+  - `hooks.Notification` matcher `"permission_prompt"` command `reattachd notify`
+- Codex (`~/.codex/config.toml`, top-level):
+
+```toml
+notify = ["reattachd", "notify"]
 ```
-URL: https://your-domain.example.com
-```
 
-> **Security**: Since Reattach allows remote command execution, you should configure authentication via [Cloudflare Zero Trust](https://developers.cloudflare.com/cloudflare-one/). Add an Access Application policy to restrict access to your tunnel hostname.
+## Advanced: Manual Device Registration (Troubleshooting)
 
-### 4. Install iOS app
-
-Download from the App Store, or build from source (see [Development](#development)).
-
-## Usage
-
-### Start a tmux session
+If SSH onboarding is temporarily unavailable, you can issue credentials manually on host:
 
 ```bash
-tmux
+reattachd devices issue --name "<device-name>" --json
 ```
 
-You can also name the session and set the working directory:
+Then add the server in app using:
 
-```bash
-tmux new-session -s myproject -c ~/projects/myproject
-```
-
-### Register your device
-
-Issue a device credential JSON from your host:
-
-```bash
-reattachd devices issue --name "<your-device-name>" --json
-```
-
-Open the iOS app and add the server manually with:
-- Server URL
+- `server_url`
 - `device_id`
 - `device_token`
-
-### Control from iOS
-
-1. Open the Reattach app
-2. Your tmux sessions appear in the list
-3. Tap a session to view output and send input
 
 ## Development
 
 ### Requirements
 
 - [Rust](https://rustup.rs/)
-- Xcode (for iOS app)
-- Apple Developer account (for push notifications)
+- Xcode (for iOS)
+- Apple Developer account (for APNs testing)
 
-### Build from source
+### Build
 
 ```bash
 git clone https://github.com/kumabook/Reattach.git
 cd Reattach
 
-# Copy sample configs
 cp config.local.mk.sample config.local.mk
 cp ios/Reattach/Config.xcconfig.sample ios/Reattach/Config.xcconfig
 
-# Edit with your values
-vim config.local.mk        # reattachd -> push-server forwarding
-vim ios/Reattach/Config.xcconfig  # Server URL
-
-# Build and install daemon
 make build
 make install
 make start
 ```
 
-### Configuration
+### Local config
 
-#### config.local.mk
+`config.local.mk`:
 
 ```makefile
 PUSH_SERVER_BASE_URL = http://127.0.0.1:8790
 PUSH_SERVER_COMPAT_NOTIFY_TOKEN = CHANGE_ME
 ```
 
-#### ios/Reattach/Config.xcconfig
+`ios/Reattach/Config.xcconfig`:
 
-```
+```xcconfig
 BASE_URL = https:/$()/your-domain.example.com
 PUSH_SERVER_BASE_URL = https://your-push-server.example.com
 ```
 
-### Makefile Commands
+### Common Make targets
 
 ```bash
-make build          # Build reattachd
-make install        # Install launchd services
-make uninstall      # Remove launchd services
-make start          # Start services
-make stop           # Stop services
-make restart        # Restart services
-make reinstall      # Rebuild, reinstall, and restart
-make logs           # View logs
-make status         # Check service status
-# Recommended: auto-install Claude Code + Codex notification hooks
-reattachd hooks install
-
-# Manual setup (if you prefer direct config edits):
-# ~/.claude/settings.json -> add both:
-#   hooks.Stop (matcher: "")
-#   hooks.Notification (matcher: "permission_prompt")
-#   each command: "reattachd notify"
-# ~/.codex/config.toml (top-level) -> notify = ["reattachd", "notify"]
+make build
+make install
+make uninstall
+make start
+make stop
+make restart
+make reinstall
+make logs
+make status
+make install-hooks
+make uninstall-hooks
 ```
 
-### Push Server in Docker
+### push-server in Docker
 
-Use Docker for all `push-server` operations:
+One-click deploy (recommended, secrets in env file):
 
 ```bash
-make push-server-docker-fmt       # Format check in Docker
-make push-server-docker-test      # Test in Docker
-make push-server-docker-build     # Build binary in Docker
-make push-server-docker-image     # Build runtime image
-make push-server-docker-run       # Run push-server container (port 8790)
+make push-server-env-init
+# run interactive wizard (it asks and writes ops/deploy/push-server.env)
+make push-server-deploy
+make push-server-status
 ```
 
-Runtime environment variables for `push-server`:
+`ops/deploy/push-server.env` is gitignored and keeps APNs secrets out of command history.
+
+Additional Docker targets:
 
 ```bash
-APNS_KEY_BASE64=...          # required for APNs delivery
+make push-server-docker-fmt
+make push-server-docker-test
+make push-server-docker-build
+make push-server-docker-image
+make push-server-docker-run
+```
+
+`push-server` secret env vars (put in `ops/deploy/push-server.env`):
+
+```bash
+APNS_KEY_BASE64=...
 APNS_KEY_ID=...
 APNS_TEAM_ID=...
 APNS_BUNDLE_ID=...
-PUSH_SERVER_COMPAT_NOTIFY_TOKEN=...   # required for reattachd /notify forwarding
+PUSH_SERVER_COMPAT_NOTIFY_TOKEN=...
 ```
 
-Observability endpoints for `push-server`:
+Metrics endpoints:
 
 ```bash
-GET /metrics       # Prometheus format
-GET /metrics.json  # JSON snapshot (debug)
+GET /metrics
+GET /metrics.json
 ```
 
-Dashboard and alert templates are provided in `ops/observability/`.
+Observability templates:
 
-### Build iOS app
+- `ops/observability/prometheus-alert-rules.yml`
+- `ops/observability/grafana-dashboard-reattach-slo.json`
 
-Open `ios/Reattach.xcodeproj` in Xcode and build to your device.
+## Security Notes
 
-## Security
-
-⚠️ **Use at your own risk.** Reattach allows remote command execution on your machine. Please understand the security implications before using this software.
-
-### Network Binding
-
-reattachd binds to `127.0.0.1:8787` by default (localhost only). This is secure by default - only local processes and tunnels can access the API.
-
-To change the port or bind address:
+- Reattach enables remote command execution; deploy with care.
+- `reattachd` defaults to `127.0.0.1:8787`.
+- All control APIs require bearer token credentials.
+- Prefer HTTPS or private network transport.
+- Rotate/revoke unused devices with:
 
 ```bash
-REATTACHD_PORT=9000 reattachd
-REATTACHD_BIND_ADDR=0.0.0.0 reattachd  # Listen on all interfaces (use with caution)
+reattachd devices list
+reattachd devices revoke <device-id>
 ```
 
-For remote access, use Cloudflare Tunnel (connects to localhost) or explicitly set `REATTACHD_BIND_ADDR=0.0.0.0` with appropriate firewall rules.
+## Breaking Changes Reference
 
-### Authentication
-
-reattachd includes device-based authentication:
-- Devices must be issued via `reattachd devices issue`
-- Each device receives a unique token for API access
-- Unregistered devices cannot access the API
-
-### Cloudflare Tunnel (Recommended for remote access)
-
-When exposing reattachd to the internet via Cloudflare Tunnel, we strongly recommend adding an extra layer of security with [Cloudflare Zero Trust](https://developers.cloudflare.com/cloudflare-one/):
-
-1. Create an Access Application for your tunnel hostname
-2. Configure authentication policies (e.g., email OTP, SSO)
-3. Enable the Cloudflare Access service token or identity verification
-
-This provides defense-in-depth: even if someone obtains a device token, they still need to pass Cloudflare's authentication.
-
-### Recommendations
-
-- Use HTTPS (via Cloudflare Tunnel or your own certificates)
-- Regularly review registered devices (`reattachd devices list`)
-- Revoke unused devices (`reattachd devices revoke <id>`)
-- Monitor reattachd logs for suspicious activity
+- `docs/breaking-changes-flag-day-2026.md`
+- `plans/phase0/breaking-changes-lock.md`
 
 ## License
 

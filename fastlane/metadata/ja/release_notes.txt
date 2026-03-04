@@ -1,1 +1,14 @@
-初回リリース!
+Flag Day アーキテクチャ移行リリースです。
+
+主な破壊的変更:
+- QRオンボーディングを廃止しました。
+- Cloudflare Access Service Token 互換モードを廃止しました。
+- Control API は Bearer token 必須になりました（open mode 廃止）。
+
+新しい基本フロー:
+- アプリ内SSHオンボーディング（host-agent のインストール/ペアリング）。
+- 通知経路: tmux bell -> host-agent -> push-server -> APNs。
+- Claude/Codex hooks 互換は `reattachd notify` で継続。
+
+移行ガイド:
+https://github.com/kumabook/Reattach/blob/main/docs/breaking-changes-flag-day-2026.md
