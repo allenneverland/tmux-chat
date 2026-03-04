@@ -7,8 +7,8 @@ use anyhow::{Context, Result};
 
 use crate::{config::write_text_file, paths::AgentPaths};
 
-const LAUNCHD_LABEL: &str = "io.reattach.host-agent";
-const SYSTEMD_UNIT_NAME: &str = "reattach-host-agent.service";
+const LAUNCHD_LABEL: &str = "io.tmux-chat.host-agent";
+const SYSTEMD_UNIT_NAME: &str = "tmux-chat-host-agent.service";
 
 #[derive(Debug, Clone, Copy)]
 pub enum ServiceManager {
@@ -231,7 +231,7 @@ fn systemd_unit(binary_path: &Path) -> String {
         .replace('"', "\\\"");
     format!(
         r#"[Unit]
-Description=Reattach Host Agent
+Description=TmuxChat Host Agent
 After=network-online.target
 Wants=network-online.target
 

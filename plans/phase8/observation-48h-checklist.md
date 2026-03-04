@@ -15,7 +15,7 @@ Observation window after Flag Day rollout (`T+0h` to `T+48h`).
 ### T+0h (immediately after rollout)
 
 - [ ] `events_bell_total` increases after a manual tmux bell test.
-- [ ] `events_agent_total` increases after a `reattachd notify` test.
+- [ ] `events_agent_total` increases after a `tmux-chatd notify` test.
 - [ ] `apns_sent_total` increases.
 - [ ] p95 `event_to_apns_latency_ms` is below 10000 ms.
 - [ ] iOS notification tap routes to expected pane (`deviceId + paneTarget`).

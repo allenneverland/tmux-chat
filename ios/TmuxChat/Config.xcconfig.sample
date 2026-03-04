@@ -1,0 +1,6 @@
+// iOS runtime configuration
+// Control-plane URL for tmux-chatd
+BASE_URL = https://your-tmux-chatd.example.com
+
+// Push server URL used for APNs registration flow
+PUSH_SERVER_BASE_URL = https://your-push-server.example.com

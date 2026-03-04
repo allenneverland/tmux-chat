@@ -19,7 +19,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[derive(Parser, Debug)]
 #[command(name = "host-agent")]
 #[command(version)]
-#[command(about = "Host relay agent for Reattach notifications")]
+#[command(about = "Host relay agent for TmuxChat notifications")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

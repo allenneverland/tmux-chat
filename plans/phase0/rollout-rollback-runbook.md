@@ -1,4 +1,4 @@
-# Reattach Rollout / Rollback Runbook (Flag Day)
+# TmuxChat Rollout / Rollback Runbook (Flag Day)
 
 ## Scope
 
@@ -17,13 +17,13 @@ This runbook covers Flag Day execution for the blueprint migration baseline.
 2. Verify commit SHA and deployed artifact match.
 3. Deploy in this order:
 - `push-server`
-- `reattachd`
+- `tmux-chatd`
 - host packaging updates (`host-agent` release availability)
 - iOS validation build verification
 4. Run smoke checks:
 - `GET /sessions` returns `401` without bearer token.
 - `GET /sessions` succeeds with valid token.
-- `POST /notify` (via `reattachd notify`) is accepted and forwarded.
+- `POST /notify` (via `tmux-chatd notify`) is accepted and forwarded.
 - tmux bell event from host-agent reaches push-server ingest.
 5. Verify metrics move:
 - `events_bell_total` increments.
@@ -46,7 +46,7 @@ This runbook covers Flag Day execution for the blueprint migration baseline.
 4. Run rollback smoke checks:
 - tmux control endpoints healthy.
 - auth behavior matches pre-cutover baseline.
-- `reattachd notify` compatibility path works.
+- `tmux-chatd notify` compatibility path works.
 5. Announce rollback completion with incident summary.
 
 ## Post-Rollout Validation

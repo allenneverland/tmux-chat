@@ -4,8 +4,10 @@ use anyhow::{Context, Result};
 
 use crate::config::write_text_file;
 
-pub const MANAGED_BLOCK_START: &str = "# >>> REATTACH HOST-AGENT START >>>";
-pub const MANAGED_BLOCK_END: &str = "# <<< REATTACH HOST-AGENT END <<<";
+pub const MANAGED_BLOCK_START: &str = "# >>> TMUX-CHAT HOST-AGENT START >>>";
+pub const MANAGED_BLOCK_END: &str = "# <<< TMUX-CHAT HOST-AGENT END <<<";
+pub const MANAGED_BLOCK_START_SUFFIX: &str = "HOST-AGENT START >>>";
+pub const MANAGED_BLOCK_END_SUFFIX: &str = "HOST-AGENT END <<<";
 
 pub fn install_bell_hook(tmux_conf_path: &Path, binary_path: &Path) -> Result<()> {
     let existing = if tmux_conf_path.exists() {
@@ -44,9 +46,7 @@ pub fn is_hook_configured(tmux_conf_path: &Path) -> Result<bool> {
     }
     let content = fs::read_to_string(tmux_conf_path)
         .with_context(|| format!("failed to read {}", tmux_conf_path.display()))?;
-    Ok(content.contains(MANAGED_BLOCK_START)
-        && content.contains(MANAGED_BLOCK_END)
-        && content.contains("emit-bell"))
+    Ok(has_managed_markers(&content) && content.contains("emit-bell"))
 }
 
 pub fn is_live_hook_active() -> bool {
@@ -71,19 +71,12 @@ pub fn render_managed_block(binary_path: &Path) -> String {
 }
 
 pub fn upsert_managed_block(existing: &str, managed_block: &str) -> String {
-    if let Some(start) = existing.find(MANAGED_BLOCK_START) {
-        if let Some(end_rel) = existing[start..].find(MANAGED_BLOCK_END) {
-            let end = start + end_rel + MANAGED_BLOCK_END.len();
-            let mut tail_start = end;
-            if existing[tail_start..].starts_with('\n') {
-                tail_start += 1;
-            }
-            let mut combined = String::new();
-            combined.push_str(&existing[..start]);
-            combined.push_str(managed_block);
-            combined.push_str(&existing[tail_start..]);
-            return combined;
-        }
+    if let Some((block_start, tail_start)) = find_any_managed_block_range(existing) {
+        let mut combined = String::new();
+        combined.push_str(&existing[..block_start]);
+        combined.push_str(managed_block);
+        combined.push_str(&existing[tail_start..]);
+        return combined;
     }
 
     if existing.trim().is_empty() {
@@ -93,6 +86,35 @@ pub fn upsert_managed_block(existing: &str, managed_block: &str) -> String {
     } else {
         format!("{existing}\n\n{managed_block}")
     }
+}
+
+fn find_block_range(existing: &str, start_marker: &str, end_marker: &str) -> Option<(usize, usize)> {
+    let start = existing.find(start_marker)?;
+    let end_rel = existing[start..].find(end_marker)?;
+    let mut block_end = start + end_rel + end_marker.len();
+    if existing[block_end..].starts_with('\n') {
+        block_end += 1;
+    }
+    Some((start, block_end))
+}
+
+fn find_any_managed_block_range(existing: &str) -> Option<(usize, usize)> {
+    if let Some(range) = find_block_range(existing, MANAGED_BLOCK_START, MANAGED_BLOCK_END) {
+        return Some(range);
+    }
+
+    let start_suffix_pos = existing.find(MANAGED_BLOCK_START_SUFFIX)?;
+    let block_start = existing[..start_suffix_pos].rfind('\n').map_or(0, |idx| idx + 1);
+    let end_suffix_rel = existing[start_suffix_pos..].find(MANAGED_BLOCK_END_SUFFIX)?;
+    let mut block_end = start_suffix_pos + end_suffix_rel + MANAGED_BLOCK_END_SUFFIX.len();
+    if existing[block_end..].starts_with('\n') {
+        block_end += 1;
+    }
+    Some((block_start, block_end))
+}
+
+fn has_managed_markers(content: &str) -> bool {
+    find_any_managed_block_range(content).is_some()
 }
 
 fn render_hook_line(binary_path: &Path) -> String {

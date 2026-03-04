@@ -8,4 +8,4 @@ Breaking changes:
 New baseline:
 - In-app SSH onboarding with host-agent install/pairing / アプリ内SSHオンボーディング
 - tmux bell -> host-agent -> push-server -> APNs notification path / 通知経路刷新
-- Claude/Codex hooks compatibility preserved via `reattachd notify` / hooks互換維持
+- Claude/Codex hooks compatibility preserved via `tmux-chatd notify` / hooks互換維持

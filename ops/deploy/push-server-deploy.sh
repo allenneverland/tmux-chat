@@ -7,9 +7,9 @@ cd "${ROOT_DIR}"
 DOCKER_BIN="${DOCKER:-docker}"
 ENV_FILE="${PUSH_SERVER_ENV_FILE:-ops/deploy/push-server.env}"
 SAMPLE_FILE="ops/deploy/push-server.env.sample"
-IMAGE="${PUSH_SERVER_IMAGE:-reattach-push-server:local}"
-CONTAINER_NAME="${PUSH_SERVER_CONTAINER_NAME:-reattach-push-server}"
-HOST_DATA_DIR="${PUSH_SERVER_HOST_DATA_DIR:-/var/lib/reattach/push-server}"
+IMAGE="${PUSH_SERVER_IMAGE:-tmux-chat-push-server:local}"
+CONTAINER_NAME="${PUSH_SERVER_CONTAINER_NAME:-tmux-chat-push-server}"
+HOST_DATA_DIR="${PUSH_SERVER_HOST_DATA_DIR:-/var/lib/tmux-chat/push-server}"
 HOST_PORT="${PUSH_SERVER_HOST_PORT:-8790}"
 CONTAINER_PORT="${PUSH_SERVER_CONTAINER_PORT:-8790}"
 
@@ -184,9 +184,9 @@ run_deploy() {
     --name "${CONTAINER_NAME}" \
     --restart unless-stopped \
     -p "${HOST_PORT}:${CONTAINER_PORT}" \
-    -v "${HOST_DATA_DIR}:/var/lib/reattach/push-server" \
+    -v "${HOST_DATA_DIR}:/var/lib/tmux-chat/push-server" \
     --env-file "${ENV_FILE}" \
-    -e PUSH_SERVER_DATA_DIR=/var/lib/reattach/push-server \
+    -e PUSH_SERVER_DATA_DIR=/var/lib/tmux-chat/push-server \
     -e PUSH_SERVER_BIND_ADDR=0.0.0.0 \
     -e PUSH_SERVER_PORT="${CONTAINER_PORT}" \
     "${IMAGE}" >/dev/null

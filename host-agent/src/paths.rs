@@ -21,11 +21,11 @@ impl AgentPaths {
 
         let data_dir = dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("reattach")
+            .join("tmux-chat")
             .join("host-agent");
 
         let runtime_base = dirs::runtime_dir().unwrap_or_else(|| data_dir.join("run"));
-        let runtime_dir = runtime_base.join("reattach-host-agent");
+        let runtime_dir = runtime_base.join("tmux-chat-host-agent");
 
         let config_path = data_dir.join("agent.json");
         let settings_path = data_dir.join("settings.json");
@@ -34,13 +34,13 @@ impl AgentPaths {
         let launchd_plist_path = home
             .join("Library")
             .join("LaunchAgents")
-            .join("io.reattach.host-agent.plist");
-        let launchd_log_dir = home.join("Library").join("Logs").join("Reattach");
+            .join("io.tmux-chat.host-agent.plist");
+        let launchd_log_dir = home.join("Library").join("Logs").join("TmuxChat");
         let systemd_service_path = home
             .join(".config")
             .join("systemd")
             .join("user")
-            .join("reattach-host-agent.service");
+            .join("tmux-chat-host-agent.service");
 
         Ok(Self {
             data_dir,

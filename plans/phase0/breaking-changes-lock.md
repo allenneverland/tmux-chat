@@ -1,4 +1,4 @@
-# Reattach Breaking Changes Lock (Phase 0)
+# TmuxChat Breaking Changes Lock (Phase 0)
 
 ## Purpose
 - Freeze and track all approved breaking changes for the blueprint migration.
@@ -12,7 +12,7 @@
 1. QR onboarding removal
 - Remove setup-token QR registration as a supported onboarding path.
 - Impacted areas:
-- `reattachd` `/register` and `setup` CLI (future phases)
+- `tmux-chatd` `/register` and `setup` CLI (future phases)
 - iOS QR scanner onboarding UI/flow
 - setup docs that instruct QR registration
 
@@ -25,7 +25,7 @@
 3. Open mode removal
 - All control APIs must require bearer token, no anonymous mode.
 - Impacted areas:
-- `reattachd` auth middleware behavior
+- `tmux-chatd` auth middleware behavior
 - operator onboarding expectations
 
 ## Explicitly Preserved (Non-breaking within this migration)

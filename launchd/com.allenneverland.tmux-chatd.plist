@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.allenneverland.tmux-chatd</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{TMUX_CHATD_PATH}}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{{LOG_DIR}}/tmux-chatd.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{LOG_DIR}}/tmux-chatd.error.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PORT</key>
+        <string>8787</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>PUSH_SERVER_BASE_URL</key>
+        <string>{{PUSH_SERVER_BASE_URL}}</string>
+        <key>PUSH_SERVER_COMPAT_NOTIFY_TOKEN</key>
+        <string>{{PUSH_SERVER_COMPAT_NOTIFY_TOKEN}}</string>
+    </dict>
+</dict>
+</plist>

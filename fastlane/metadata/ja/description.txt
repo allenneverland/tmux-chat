@@ -15,6 +15,6 @@ VPNやCloudflare Tunnelを使えば、外出先からも安全にアクセスで
 【必要な環境】
 • macOSまたはLinux
 • tmux
-• reattachd（無料・オープンソース）
+• tmux-chatd（無料・オープンソース）
 
-セットアップ方法: https://github.com/allenneverland/Reattach
+セットアップ方法: https://github.com/allenneverland/tmux-chat

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>PushServerBaseURL</key>
+	<string>$(PUSH_SERVER_BASE_URL)</string>
+	<key>kMDItemKeywords</key>
+	<array>
+		<string>tmux</string>
+		<string>tmux-chat</string>
+		<string>cli</string>
+		<string>claude</string>
+		<string>codex</string>
+		<string>coding agent</string>
+		<string>ssh</string>
+		<string>shell</string>
+		<string>terminal</string>
+		<string>remote</string>
+	</array>
+</dict>
+</plist>

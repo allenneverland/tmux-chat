@@ -27,14 +27,14 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Rust fmt (reattachd + host-agent)
-        run: cargo fmt -p reattachd -p host-agent -- --check
+      - name: Rust fmt (tmux-chatd + host-agent)
+        run: cargo fmt -p tmux-chatd -p host-agent -- --check
 
-      - name: Rust build (reattachd + host-agent)
-        run: cargo build --all-targets -p reattachd -p host-agent
+      - name: Rust build (tmux-chatd + host-agent)
+        run: cargo build --all-targets -p tmux-chatd -p host-agent
 
-      - name: Rust test (reattachd + host-agent)
-        run: cargo test -p reattachd -p host-agent
+      - name: Rust test (tmux-chatd + host-agent)
+        run: cargo test -p tmux-chatd -p host-agent
 
   push-server-docker:
     name: Push Server (Docker)
@@ -46,14 +46,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build push-server dev image
-        run: docker build -f push-server/Dockerfile --target dev -t reattach-push-server-dev:ci .
+        run: docker build -f push-server/Dockerfile --target dev -t tmux-chat-push-server-dev:ci .
 
       - name: Rust fmt in Docker (push-server)
         run: |
           docker run --rm \
             -v "$PWD:/workspace" \
             -w /workspace \
-            reattach-push-server-dev:ci \
+            tmux-chat-push-server-dev:ci \
             cargo fmt -p push-server -- --check
 
       - name: Tests in Docker (push-server)
@@ -61,15 +61,15 @@ jobs:
           docker run --rm \
             -v "$PWD:/workspace" \
             -w /workspace \
-            reattach-push-server-dev:ci \
+            tmux-chat-push-server-dev:ci \
             cargo test -p push-server
 
       - name: Build runtime image
-        run: docker build -f push-server/Dockerfile --target runtime -t reattach-push-server:ci .
+        run: docker build -f push-server/Dockerfile --target runtime -t tmux-chat-push-server:ci .
 
       - name: Run container smoke test
         run: |
-          docker run -d --rm --name push-server-ci -p 127.0.0.1:8790:8790 reattach-push-server:ci
+          docker run -d --rm --name push-server-ci -p 127.0.0.1:8790:8790 tmux-chat-push-server:ci
           trap "docker stop push-server-ci" EXIT
           for i in $(seq 1 15); do
             if curl -fsS http://127.0.0.1:8790/healthz >/dev/null; then
@@ -91,8 +91,8 @@ jobs:
 
       - name: Prepare Config.xcconfig
         run: |
-          if [ ! -f ios/Reattach/Config.xcconfig ]; then
-            cat > ios/Reattach/Config.xcconfig <<'EOF'
+          if [ ! -f ios/TmuxChat/Config.xcconfig ]; then
+            cat > ios/TmuxChat/Config.xcconfig <<'EOF'
             // CI placeholder config
             PUSH_SERVER_BASE_URL = http://127.0.0.1:8790
             EOF
@@ -101,8 +101,8 @@ jobs:
       - name: Build iOS app
         run: |
           xcodebuild \
-            -project ios/Reattach.xcodeproj \
-            -scheme Reattach \
+            -project ios/TmuxChat.xcodeproj \
+            -scheme TmuxChat \
             -configuration Debug \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \

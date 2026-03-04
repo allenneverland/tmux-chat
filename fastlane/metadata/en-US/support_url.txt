@@ -1,1 +1,1 @@
-https://reattach.tmux.allenneverland.tokyo/
+https://tmux-chat.tmux.allenneverland.tokyo/

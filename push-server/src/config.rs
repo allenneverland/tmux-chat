@@ -9,7 +9,7 @@ const DEFAULT_PAIRING_TTL_SECONDS: i64 = 600;
 #[derive(Parser, Debug)]
 #[command(name = "push-server")]
 #[command(version)]
-#[command(about = "Push server for Reattach notification pipeline")]
+#[command(about = "Push server for TmuxChat notification pipeline")]
 pub struct Cli {
     /// Bind address
     #[arg(long, env = "PUSH_SERVER_BIND_ADDR", default_value = DEFAULT_BIND_ADDR)]
@@ -35,7 +35,7 @@ pub struct Cli {
     #[arg(long, env = "PUSH_SERVER_LEGACY_DEVICE_TOKENS_FILE")]
     pub legacy_device_tokens_file: Option<PathBuf>,
 
-    /// Optional static token used by reattachd /notify compatibility forwarding
+    /// Optional static token used by tmux-chatd /notify compatibility forwarding
     #[arg(long, env = "PUSH_SERVER_COMPAT_NOTIFY_TOKEN")]
     pub compat_notify_token: Option<String>,
 }
@@ -112,13 +112,13 @@ fn default_data_dir() -> PathBuf {
 
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("reattach")
+        .join("tmux-chat")
         .join("push-server")
 }
 
 fn default_legacy_device_tokens_file() -> Option<PathBuf> {
     let path = dirs::data_local_dir()?
-        .join("reattachd")
+        .join("tmux-chatd")
         .join("device_tokens.json");
     if path.exists() {
         Some(path)

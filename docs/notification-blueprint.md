@@ -1,4 +1,4 @@
-# Reattach藍圖（Blueprint）
+# tmux-chat藍圖（Blueprint）
 
 > 文件目的：定義「像 message app 一樣，App 不開啟也可收通知」的完整產品與技術藍圖。  
 > 文件性質：**規劃文件**，不包含程式實作。

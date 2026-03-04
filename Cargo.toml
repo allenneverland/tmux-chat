@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "reattachd",
+    "tmux-chatd",
     "push-server",
     "host-agent",
 ]

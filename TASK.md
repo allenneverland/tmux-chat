@@ -1,4 +1,4 @@
-# Reattach 藍圖改造任務書（保留核心 tmux 能力）
+# TmuxChat 藍圖改造任務書（保留核心 tmux 能力）
 
 ## 目標摘要
 本任務將目前實作改造成符合 `docs/notification-blueprint.md` 的新架構與流程，並保留核心能力：iOS 遠端操作 tmux（sessions/input/output/delete）。
@@ -27,7 +27,7 @@
 
 ## 公開介面與型別變更
 
-### `reattachd`（保留控制面，移除舊註冊流程）
+### `tmux-chatd`（保留控制面，移除舊註冊流程）
 保留：
 1. `GET /sessions`
 2. `POST /sessions`
@@ -97,7 +97,7 @@ APNs payload：
 - [x] 鎖定 breaking changes（QR 移除、Service Token 移除）
 
 ### Phase 1 — Repo 與 CI 改造
-- [x] 建立 workspace（`reattachd` / `push-server` / `host-agent`）
+- [x] 建立 workspace（`tmux-chatd` / `push-server` / `host-agent`）
 - [x] CI 新增三個 binary build/test
 - [x] iOS CI 保持可編譯
 
@@ -115,7 +115,7 @@ APNs payload：
 - [x] 完成常駐服務（launchd user / systemd user）
 - [x] 完成 best-effort 上報（失敗記 log）
 
-### Phase 4 — `reattachd` 收斂
+### Phase 4 — `tmux-chatd` 收斂
 - [x] 刪除 `/register` 與 setup token
 - [x] 移除 `setup` CLI 與 QR 相關文案
 - [x] 保留 `notify/hooks` 並改為轉送 push-server
@@ -126,7 +126,7 @@ APNs payload：
 - [x] 新增 SSH 新增主機流程
 - [x] App 透過 SSH 安裝 host-agent
 - [x] App 完成 pairing 並註冊 APNs device
-- [x] App 透過 SSH 取得 `reattachd` 控制 token
+- [x] App 透過 SSH 取得 `tmux-chatd` 控制 token
 - [x] 移除 QR Scanner 與相機權限文案
 - [x] 移除 Cloudflare Service Token UI/邏輯
 
@@ -161,13 +161,13 @@ APNs payload：
 ### 單元測試
 1. pairing token 發放/過期/兌換
 2. push-server APNs 發送與 bad token 清理
-3. `reattachd` token 發放與驗證
+3. `tmux-chatd` token 發放與驗證
 4. host-agent bell 事件解析與送出
 
 ### 整合測試
 1. App SSH onboarding E2E
 2. bell -> host-agent -> push-server -> APNs(mock) E2E
-3. Claude/Codex hook -> `reattachd notify` -> push-server -> APNs E2E
+3. Claude/Codex hook -> `tmux-chatd notify` -> push-server -> APNs E2E
 4. 通知點擊 -> `deviceId + paneTarget` 導頁 E2E
 
 ### 回歸測試

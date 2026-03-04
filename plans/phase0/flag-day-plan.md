@@ -1,4 +1,4 @@
-# Reattach Flag Day Plan (Phase 0 -> Phase 8)
+# TmuxChat Flag Day Plan (Phase 0 -> Phase 8)
 
 ## Document Control
 
@@ -19,7 +19,7 @@ Execute a single-cutover migration to the SSH onboarding + host-agent + push-ser
 - [ ] `plans/phase0/rollout-rollback-runbook.md` approved.
 - [ ] `plans/phase0/breaking-changes-lock.md` approved.
 - [ ] `docs/breaking-changes-flag-day-2026.md` published.
-- [ ] CI green for `reattachd`, `host-agent`, `push-server`, iOS build.
+- [ ] CI green for `tmux-chatd`, `host-agent`, `push-server`, iOS build.
 - [ ] SLO dashboard and alert rules reachable by on-call.
 - [ ] Rollback rehearsal completed within last 7 days.
 

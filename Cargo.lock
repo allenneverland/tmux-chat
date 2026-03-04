@@ -1270,7 +1270,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "reattachd"
+name = "tmux-chatd"
 version = "1.0.4"
 dependencies = [
  "a2",

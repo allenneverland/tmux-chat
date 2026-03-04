@@ -1,5 +1,5 @@
 groups:
-  - name: reattach-slo
+  - name: tmux-chat-slo
     rules:
       - alert: EventToApnsLatencyP95High
         expr: |
@@ -10,7 +10,7 @@ groups:
         for: 10m
         labels:
           severity: page
-          service: reattach-push-server
+          service: tmux-chat-push-server
         annotations:
           summary: "event_to_apns_latency_ms p95 > 10s"
           description: "Push latency p95 exceeded 10s for 10 minutes."
@@ -25,7 +25,7 @@ groups:
         for: 15m
         labels:
           severity: page
-          service: reattach-ios-routing
+          service: tmux-chat-ios-routing
         annotations:
           summary: "Notification route success rate below 99%"
           description: "Routing success ratio has remained below 99% for 15 minutes."
@@ -40,7 +40,7 @@ groups:
         for: 30m
         labels:
           severity: warning
-          service: reattach-push-server
+          service: tmux-chat-push-server
         annotations:
           summary: "Invalid APNs token cleanup ratio below 99%"
           description: "Invalid token cleanup ratio is below 99% over the last 24 hours."

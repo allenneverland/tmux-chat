@@ -8,7 +8,7 @@ Breaking changes:
 New baseline:
 - SSH onboarding in app (installs/pairs host-agent).
 - Notification pipeline: tmux bell -> host-agent -> push-server -> APNs.
-- Claude/Codex hooks compatibility remains via `reattachd notify`.
+- Claude/Codex hooks compatibility remains via `tmux-chatd notify`.
 
 Migration guide:
-https://github.com/allenneverland/Reattach/blob/main/docs/breaking-changes-flag-day-2026.md
+https://github.com/allenneverland/tmux-chat/blob/main/docs/breaking-changes-flag-day-2026.md

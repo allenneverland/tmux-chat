@@ -1,6 +1,6 @@
-# Reattach Observability (Phase 7)
+# tmux-chat Observability (Phase 7)
 
-This directory contains production-ready observability artifacts for Reattach Phase 7.
+This directory contains production-ready observability artifacts for tmux-chat Phase 7.
 
 ## Metrics endpoints
 
@@ -20,7 +20,7 @@ This directory contains production-ready observability artifacts for Reattach Ph
 
 ```yaml
 scrape_configs:
-  - job_name: reattach-push-server
+  - job_name: tmux-chat-push-server
     metrics_path: /metrics
     static_configs:
       - targets: ["push-server:8790"]
@@ -32,7 +32,7 @@ Use [`prometheus-alert-rules.yml`](./prometheus-alert-rules.yml) and load it via
 
 ## Grafana dashboard
 
-Import [`grafana-dashboard-reattach-slo.json`](./grafana-dashboard-reattach-slo.json) into Grafana.
+Import [`grafana-dashboard-tmux-chat-slo.json`](./grafana-dashboard-tmux-chat-slo.json) into Grafana.
 
 ## Suggested SLO alert routing
 

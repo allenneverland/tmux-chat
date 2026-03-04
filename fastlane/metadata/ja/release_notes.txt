@@ -8,7 +8,7 @@ Flag Day アーキテクチャ移行リリースです。
 新しい基本フロー:
 - アプリ内SSHオンボーディング（host-agent のインストール/ペアリング）。
 - 通知経路: tmux bell -> host-agent -> push-server -> APNs。
-- Claude/Codex hooks 互換は `reattachd notify` で継続。
+- Claude/Codex hooks 互換は `tmux-chatd notify` で継続。
 
 移行ガイド:
-https://github.com/allenneverland/Reattach/blob/main/docs/breaking-changes-flag-day-2026.md
+https://github.com/allenneverland/tmux-chat/blob/main/docs/breaking-changes-flag-day-2026.md

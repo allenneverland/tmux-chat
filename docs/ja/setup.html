@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>セットアップガイド - Reattach</title>
-    <meta name="description" content="MacまたはLinuxでreattachdをセットアップする方法。">
+    <title>セットアップガイド - tmux-chat</title>
+    <meta name="description" content="MacまたはLinuxでtmux-chatdをセットアップする方法。">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -249,13 +249,13 @@
     <header>
         <nav>
             <a href="/ja/" class="logo">
-                <img src="../app-icon.png" alt="Reattach" class="logo-icon">
-                Reattach
+                <img src="../app-icon.png" alt="tmux-chat" class="logo-icon">
+                tmux-chat
             </a>
             <div class="nav-links">
                 <a href="/ja/">ホーム</a>
                 <a href="/ja/setup.html" class="active">セットアップ</a>
-                <a href="https://github.com/allenneverland/Reattach">GitHub</a>
+                <a href="https://github.com/allenneverland/tmux-chat">GitHub</a>
                 <a href="/setup.html">English</a>
             </div>
         </nav>
@@ -266,15 +266,15 @@
             <h1>セットアップガイド</h1>
 
             <div class="note" style="background: rgba(255, 149, 0, 0.1); border-color: rgba(255, 149, 0, 0.3);">
-                <p><strong>⚠️ 自己責任でご使用ください。</strong> Reattachはマシン上でリモートコマンド実行を可能にします。使用前にセキュリティ上のリスクをご理解ください。reattachdにはデバイスベースの認証機能がありますが、インターネットに公開する場合は追加のセキュリティ対策（VPN、Cloudflare Zero Trustなど）を推奨します。</p>
+                <p><strong>⚠️ 自己責任でご使用ください。</strong> tmux-chatはマシン上でリモートコマンド実行を可能にします。使用前にセキュリティ上のリスクをご理解ください。tmux-chatdにはデバイスベースの認証機能がありますが、インターネットに公開する場合は追加のセキュリティ対策（VPN、Cloudflare Zero Trustなど）を推奨します。</p>
             </div>
 
             <div class="step">
                 <span class="step-number">1</span>
-                <span class="step-title">reattachdをインストール</span>
+                <span class="step-title">tmux-chatdをインストール</span>
                 <div class="step-content">
                     <p>お使いのコンピュータで以下のコマンドを実行します：</p>
-                    <pre><code>curl -fsSL https://raw.githubusercontent.com/allenneverland/Reattach/main/install.sh | sh</code></pre>
+                    <pre><code>curl -fsSL https://raw.githubusercontent.com/allenneverland/tmux-chat/main/install.sh | sh</code></pre>
                 </div>
             </div>
 
@@ -284,34 +284,34 @@
                 <div class="step-content">
                     <h3>macOS (launchd)</h3>
                     <pre><code># ログディレクトリを作成
-mkdir -p ~/Library/Logs/Reattach
+mkdir -p ~/Library/Logs/tmux-chat
 
 # plistファイルを作成
-cat > ~/Library/LaunchAgents/com.allenneverland.reattachd.plist << 'EOF'
+cat > ~/Library/LaunchAgents/com.allenneverland.tmux-chatd.plist << 'EOF'
 &lt;?xml version="1.0" encoding="UTF-8"?&gt;
 &lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
 &lt;plist version="1.0"&gt;
 &lt;dict&gt;
     &lt;key&gt;Label&lt;/key&gt;
-    &lt;string&gt;com.allenneverland.reattachd&lt;/string&gt;
+    &lt;string&gt;com.allenneverland.tmux-chatd&lt;/string&gt;
     &lt;key&gt;ProgramArguments&lt;/key&gt;
     &lt;array&gt;
-        &lt;string&gt;/usr/local/bin/reattachd&lt;/string&gt;
+        &lt;string&gt;/usr/local/bin/tmux-chatd&lt;/string&gt;
     &lt;/array&gt;
     &lt;key&gt;RunAtLoad&lt;/key&gt;
     &lt;true/&gt;
     &lt;key&gt;KeepAlive&lt;/key&gt;
     &lt;true/&gt;
     &lt;key&gt;StandardOutPath&lt;/key&gt;
-    &lt;string&gt;~/Library/Logs/Reattach/reattachd.log&lt;/string&gt;
+    &lt;string&gt;~/Library/Logs/tmux-chat/tmux-chatd.log&lt;/string&gt;
     &lt;key&gt;StandardErrorPath&lt;/key&gt;
-    &lt;string&gt;~/Library/Logs/Reattach/reattachd.error.log&lt;/string&gt;
+    &lt;string&gt;~/Library/Logs/tmux-chat/tmux-chatd.error.log&lt;/string&gt;
     &lt;key&gt;EnvironmentVariables&lt;/key&gt;
     &lt;dict&gt;
-        &lt;key&gt;REATTACHD_PORT&lt;/key&gt;
+        &lt;key&gt;TMUX_CHATD_PORT&lt;/key&gt;
         &lt;string&gt;8787&lt;/string&gt;
         &lt;!-- ローカルネットワークからのアクセスを許可する場合はコメント解除 (デフォルト: 127.0.0.1) --&gt;
-        &lt;!-- &lt;key&gt;REATTACHD_BIND_ADDR&lt;/key&gt; --&gt;
+        &lt;!-- &lt;key&gt;TMUX_CHATD_BIND_ADDR&lt;/key&gt; --&gt;
         &lt;!-- &lt;string&gt;0.0.0.0&lt;/string&gt; --&gt;
         &lt;key&gt;PATH&lt;/key&gt;
         &lt;string&gt;/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin&lt;/string&gt;
@@ -321,22 +321,22 @@ cat > ~/Library/LaunchAgents/com.allenneverland.reattachd.plist << 'EOF'
 EOF
 
 # 読み込んで開始
-launchctl load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist</code></pre>
+launchctl load ~/Library/LaunchAgents/com.allenneverland.tmux-chatd.plist</code></pre>
 
                     <h3>Linux (systemd)</h3>
                     <pre><code># サービスファイルを作成
-sudo tee /etc/systemd/system/reattachd.service << 'EOF'
+sudo tee /etc/systemd/system/tmux-chatd.service << 'EOF'
 [Unit]
-Description=Reattach Daemon
+Description=tmux-chat Daemon
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/reattachd
+ExecStart=/usr/local/bin/tmux-chatd
 Restart=always
-Environment=REATTACHD_PORT=8787
+Environment=TMUX_CHATD_PORT=8787
 # ローカルネットワークからのアクセスを許可する場合はコメント解除 (デフォルト: 127.0.0.1)
-# Environment=REATTACHD_BIND_ADDR=0.0.0.0
+# Environment=TMUX_CHATD_BIND_ADDR=0.0.0.0
 
 [Install]
 WantedBy=multi-user.target
@@ -344,8 +344,8 @@ EOF
 
 # 有効化して開始
 sudo systemctl daemon-reload
-sudo systemctl enable reattachd
-sudo systemctl start reattachd</code></pre>
+sudo systemctl enable tmux-chatd
+sudo systemctl start tmux-chatd</code></pre>
                 </div>
             </div>
 
@@ -353,7 +353,7 @@ sudo systemctl start reattachd</code></pre>
                 <span class="step-number">3</span>
                 <span class="step-title">ネットワークアクセスを設定</span>
                 <div class="step-content">
-                    <p>iOSデバイスからreattachdへの接続方法を選択します：</p>
+                    <p>iOSデバイスからtmux-chatdへの接続方法を選択します：</p>
 
                     <h2 style="font-size: 1.2rem; margin-top: 24px; border: none; padding: 0;">ローカルネットワーク</h2>
 
@@ -385,9 +385,9 @@ URL: https://your-domain.com:8787</code></pre>
                 <span class="step-number">4</span>
                 <span class="step-title">SSHオンボーディングでサーバーを追加</span>
                 <div class="step-content">
-                    <p>Reattach iOSアプリで<strong>Add Server via SSH</strong>を選択します。</p>
+                    <p>tmux-chat iOSアプリで<strong>Add Server via SSH</strong>を選択します。</p>
                     <ol style="color: var(--text-secondary); padding-left: 24px; margin-bottom: 0;">
-                        <li>Control URL（reattachd URL）を入力します。</li>
+                        <li>Control URL（tmux-chatd URL）を入力します。</li>
                         <li>SSHのホスト、ポート、ユーザー名、認証情報を入力します。</li>
                         <li>Connect and Install をタップします。</li>
                     </ol>
@@ -400,12 +400,12 @@ URL: https://your-domain.com:8787</code></pre>
                 <span class="step-title">コーディングエージェント通知を設定（任意）</span>
                 <div class="step-content">
                     <p><strong>推奨:</strong> Claude Code / Codex hooks を自動設定:</p>
-                    <pre><code>reattachd hooks install</code></pre>
+                    <pre><code>tmux-chatd hooks install</code></pre>
 
                     <p><strong>手動設定:</strong></p>
-                    <p>Claude Code (<code>~/.claude/settings.json</code>) には、<code>hooks.Stop</code> (matcher: <code>""</code>) と <code>hooks.Notification</code> (matcher: <code>"permission_prompt"</code>) の両方を追加し、command は <code>reattachd notify</code> を指定してください。</p>
+                    <p>Claude Code (<code>~/.claude/settings.json</code>) には、<code>hooks.Stop</code> (matcher: <code>""</code>) と <code>hooks.Notification</code> (matcher: <code>"permission_prompt"</code>) の両方を追加し、command は <code>tmux-chatd notify</code> を指定してください。</p>
                     <p>Codex (<code>~/.codex/config.toml</code>) にはトップレベルで以下を設定してください:</p>
-                    <pre><code>notify = ["reattachd", "notify"]</code></pre>
+                    <pre><code>notify = ["tmux-chatd", "notify"]</code></pre>
                 </div>
             </div>
 
@@ -414,13 +414,13 @@ URL: https://your-domain.com:8787</code></pre>
                 <span class="step-title">高度な代替手順: 手動でデバイストークンを発行</span>
                 <div class="step-content">
                     <p>SSHオンボーディングが一時的に使えない場合は、ホストで直接認証情報を発行できます：</p>
-                    <pre><code>reattachd devices issue --name "&lt;device-name&gt;" --json</code></pre>
+                    <pre><code>tmux-chatd devices issue --name "&lt;device-name&gt;" --json</code></pre>
                     <p>その後、アプリで <code>device_id</code> と <code>device_token</code> を使って手動追加してください。</p>
                 </div>
             </div>
 
             <div class="note">
-                <p><strong>サポートが必要ですか？</strong> 詳細やトラブルシューティングについては<a href="https://github.com/allenneverland/Reattach">GitHubリポジトリ</a>をご覧ください。</p>
+                <p><strong>サポートが必要ですか？</strong> 詳細やトラブルシューティングについては<a href="https://github.com/allenneverland/tmux-chat">GitHubリポジトリ</a>をご覧ください。</p>
             </div>
         </div>
     </main>
@@ -429,7 +429,7 @@ URL: https://your-domain.com:8787</code></pre>
         <div class="container">
             <p>
                 Built with &#10084; by <a href="https://github.com/allenneverland">allenneverland</a> ・
-                <a href="https://github.com/allenneverland/Reattach">Source Code</a> ・
+                <a href="https://github.com/allenneverland/tmux-chat">Source Code</a> ・
                 MIT License
             </p>
         </div>

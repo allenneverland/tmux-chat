@@ -1,8 +1,8 @@
-# Reattach
+# tmux-chat
 
 [English](./README.md) | [繁體中文](./README.zh-TW.md)
 
-**Reattach** 是一個 iOS 用的遠端 tmux 客戶端。  
+**tmux-chat** 是一個 iOS 用的遠端 tmux 客戶端。  
 你可以在任何地方控制 Mac/Linux 上的 tmux sessions，並在 tmux bell 或 coding-agent 事件發生時收到推播通知。
 
 ## Flag Day 遷移公告
@@ -17,27 +17,27 @@
 
 ## 架構
 
-Reattach 現在由兩條互相配合的路徑組成：
+tmux-chat 現在由兩條互相配合的路徑組成：
 
-1. 控制面（iOS -> reattachd -> tmux）
-2. 通知面（tmux bell / agent hook -> host-agent 或 reattachd notify -> push-server -> APNs -> iOS）
+1. 控制面（iOS -> tmux-chatd -> tmux）
+2. 通知面（tmux bell / agent hook -> host-agent 或 tmux-chatd notify -> push-server -> APNs -> iOS）
 
 ```text
 Control Plane
 ------------
-iOS App --HTTPS--> reattachd --local--> tmux
+iOS App --HTTPS--> tmux-chatd --local--> tmux
 
 Notification Plane
 ------------------
 tmux alert-bell --> host-agent --> push-server --> APNs --> iOS
-Claude/Codex hook --> reattachd notify --> push-server --> APNs --> iOS
+Claude/Codex hook --> tmux-chatd notify --> push-server --> APNs --> iOS
 ```
 
 ## 元件
 
 | 元件 | 說明 |
 |-----------|-------------|
-| `reattachd` | 提供 tmux 控制 API（`sessions` / `panes`）的 Rust daemon |
+| `tmux-chatd` | 提供 tmux 控制 API（`sessions` / `panes`）的 Rust daemon |
 | `host-agent` | 主機端 relay agent，將 tmux bell 事件回報到 push-server |
 | `push-server` | APNs 發送服務（pairing、裝置註冊、靜音規則、指標） |
 | `ios/` | iOS App（SSH onboarding、遠端 tmux 控制、通知導頁） |
@@ -51,43 +51,45 @@ Claude/Codex hook --> reattachd notify --> push-server --> APNs --> iOS
 - 已開啟通知權限的 iOS 裝置
 - iOS 裝置可透過 SSH 存取主機（網路路徑由使用者自行選擇：VPN、Tailscale、tunnel 等）
 
-完整部署文件：
-- `docs/deployment-three-systems.zh-TW.md`
+部署文件（每個系統一份）：
+- `docs/deployment-push-server.zh-TW.md`
+- `docs/deployment-tmux-chatd.zh-TW.md`
+- `docs/deployment-host-agent.zh-TW.md`
 
 ## 快速開始
 
-### 1. 在主機安裝 reattachd
+### 1. 在主機安裝 tmux-chatd
 
 方案 A：Homebrew（macOS）
 
 ```bash
-brew tap allenneverland/reattach
-brew install reattachd
-brew services start reattachd
+brew tap allenneverland/tmux-chat
+brew install tmux-chatd
+brew services start tmux-chatd
 ```
 
 方案 B：安裝腳本（macOS / Linux）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/allenneverland/Reattach/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/allenneverland/tmux-chat/main/install.sh | sh
 ```
 
-### 2. 啟動 reattachd 服務
+### 2. 啟動 tmux-chatd 服務
 
 macOS（launchd 範例）：
 
 ```bash
-mkdir -p ~/Library/Logs/Reattach
-# create and load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist
-launchctl load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist
+mkdir -p ~/Library/Logs/tmux-chat
+# create and load ~/Library/LaunchAgents/com.allenneverland.tmux-chatd.plist
+launchctl load ~/Library/LaunchAgents/com.allenneverland.tmux-chatd.plist
 ```
 
 Linux（systemd 範例）：
 
 ```bash
-# create and enable /etc/systemd/system/reattachd.service
+# create and enable /etc/systemd/system/tmux-chatd.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now reattachd
+sudo systemctl enable --now tmux-chatd
 ```
 
 ### 3. 選擇控制面 URL 的網路路徑
@@ -103,7 +105,7 @@ sudo systemctl enable --now reattachd
 在 iOS App 中：
 
 1. 點選 `Add Server via SSH`。
-2. 輸入控制面 URL（reattachd URL）。
+2. 輸入控制面 URL（tmux-chatd URL）。
 3. 輸入 SSH 主機/使用者/port 與驗證資訊。
 4. 繼續完成設定。
 
@@ -111,7 +113,7 @@ App 會自動：
 
 - 驗證 SSH 連線
 - 遠端安裝 `host-agent`
-- 發放控制憑證（在主機執行 `reattachd devices issue --json`）
+- 發放控制憑證（在主機執行 `tmux-chatd devices issue --json`）
 - 執行 push pairing 與 APNs 註冊
 - 儲存伺服器設定並驗證 tmux API
 
@@ -120,18 +122,18 @@ App 會自動：
 自動安裝：
 
 ```bash
-reattachd hooks install
+tmux-chatd hooks install
 ```
 
 手動設定：
 
 - Claude Code（`~/.claude/settings.json`）：
-  - `hooks.Stop` matcher `""` command `reattachd notify`
-  - `hooks.Notification` matcher `"permission_prompt"` command `reattachd notify`
+  - `hooks.Stop` matcher `""` command `tmux-chatd notify`
+  - `hooks.Notification` matcher `"permission_prompt"` command `tmux-chatd notify`
 - Codex（`~/.codex/config.toml`，top-level）：
 
 ```toml
-notify = ["reattachd", "notify"]
+notify = ["tmux-chatd", "notify"]
 ```
 
 ## 進階：手動註冊裝置（疑難排解）
@@ -139,7 +141,7 @@ notify = ["reattachd", "notify"]
 如果 SSH onboarding 暫時不可用，你可以先在主機手動發放憑證：
 
 ```bash
-reattachd devices issue --name "<device-name>" --json
+tmux-chatd devices issue --name "<device-name>" --json
 ```
 
 然後在 App 內使用以下資訊新增伺服器：
@@ -159,11 +161,11 @@ reattachd devices issue --name "<device-name>" --json
 ### Build
 
 ```bash
-git clone https://github.com/allenneverland/Reattach.git
-cd Reattach
+git clone https://github.com/allenneverland/tmux-chat.git
+cd tmux-chat
 
 cp config.local.mk.sample config.local.mk
-cp ios/Reattach/Config.xcconfig.sample ios/Reattach/Config.xcconfig
+cp ios/TmuxChat/Config.xcconfig.sample ios/TmuxChat/Config.xcconfig
 
 make build
 make install
@@ -179,12 +181,26 @@ PUSH_SERVER_BASE_URL = http://127.0.0.1:8790
 PUSH_SERVER_COMPAT_NOTIFY_TOKEN = CHANGE_ME
 ```
 
-`ios/Reattach/Config.xcconfig`：
+`ios/TmuxChat/Config.xcconfig`：
 
 ```xcconfig
 BASE_URL = https:/$()/your-domain.example.com
 PUSH_SERVER_BASE_URL = https://your-push-server.example.com
 ```
+
+### Tailscale-only 一鍵初始化
+
+一個指令互動產生所有本機模板：
+
+```bash
+make tailscale-only-init
+```
+
+會寫入：
+- `ops/deploy/push-server.env`
+- `config.local.mk`
+- `ios/TmuxChat/Config.xcconfig`
+- `ops/deploy/tmux-chatd.service.tailscale.example`
 
 ### 常用 Make targets
 
@@ -245,19 +261,19 @@ GET /metrics.json
 Observability 範本：
 
 - `ops/observability/prometheus-alert-rules.yml`
-- `ops/observability/grafana-dashboard-reattach-slo.json`
+- `ops/observability/grafana-dashboard-tmux-chat-slo.json`
 
 ## 安全注意事項
 
-- Reattach 可進行遠端命令執行，請謹慎部署。
-- `reattachd` 預設綁定 `127.0.0.1:8787`。
+- tmux-chat 可進行遠端命令執行，請謹慎部署。
+- `tmux-chatd` 預設綁定 `127.0.0.1:8787`。
 - 所有控制 API 皆需 Bearer Token。
 - 建議使用 HTTPS 或私有網路傳輸。
 - 可透過以下指令輪替/撤銷未使用裝置：
 
 ```bash
-reattachd devices list
-reattachd devices revoke <device-id>
+tmux-chatd devices list
+tmux-chatd devices revoke <device-id>
 ```
 
 ## Breaking Changes 參考

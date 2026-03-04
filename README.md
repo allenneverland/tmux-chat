@@ -1,8 +1,8 @@
-# Reattach
+# tmux-chat
 
 [English](./README.md) | [繁體中文](./README.zh-TW.md)
 
-**Reattach** is a remote tmux client for iOS.
+**tmux-chat** is a remote tmux client for iOS.
 Control your Mac/Linux tmux sessions from anywhere, and receive push notifications when tmux bell or coding-agent events happen.
 
 ## Flag Day Migration Notice
@@ -17,27 +17,27 @@ See the announcement: `docs/breaking-changes-flag-day-2026.md`.
 
 ## Architecture
 
-Reattach now has two paths that work together:
+tmux-chat now has two paths that work together:
 
-1. Control plane (iOS -> reattachd -> tmux)
-2. Notification plane (tmux bell / agent hook -> host-agent or reattachd notify -> push-server -> APNs -> iOS)
+1. Control plane (iOS -> tmux-chatd -> tmux)
+2. Notification plane (tmux bell / agent hook -> host-agent or tmux-chatd notify -> push-server -> APNs -> iOS)
 
 ```text
 Control Plane
 ------------
-iOS App --HTTPS--> reattachd --local--> tmux
+iOS App --HTTPS--> tmux-chatd --local--> tmux
 
 Notification Plane
 ------------------
 tmux alert-bell --> host-agent --> push-server --> APNs --> iOS
-Claude/Codex hook --> reattachd notify --> push-server --> APNs --> iOS
+Claude/Codex hook --> tmux-chatd notify --> push-server --> APNs --> iOS
 ```
 
 ## Components
 
 | Component | Description |
 |-----------|-------------|
-| `reattachd` | Rust daemon exposing tmux control APIs (`sessions` / `panes`) |
+| `tmux-chatd` | Rust daemon exposing tmux control APIs (`sessions` / `panes`) |
 | `host-agent` | Host-side relay agent that reports tmux bell events to push-server |
 | `push-server` | APNs delivery service (pairing, device registration, mute rules, metrics) |
 | `ios/` | iOS app (SSH onboarding, remote tmux control, notification routing) |
@@ -51,43 +51,45 @@ Claude/Codex hook --> reattachd notify --> push-server --> APNs --> iOS
 - iOS device with notification permission enabled
 - SSH access from iOS device to host (network path is user choice: VPN, Tailscale, tunnel, etc.)
 
-Full deployment guide (Traditional Chinese):
-- `docs/deployment-three-systems.zh-TW.md`
+Deployment docs (one per system, Traditional Chinese):
+- `docs/deployment-push-server.zh-TW.md`
+- `docs/deployment-tmux-chatd.zh-TW.md`
+- `docs/deployment-host-agent.zh-TW.md`
 
 ## Quick Start
 
-### 1. Install reattachd on the host
+### 1. Install tmux-chatd on the host
 
 Option A: Homebrew (macOS)
 
 ```bash
-brew tap allenneverland/reattach
-brew install reattachd
-brew services start reattachd
+brew tap allenneverland/tmux-chat
+brew install tmux-chatd
+brew services start tmux-chatd
 ```
 
 Option B: install script (macOS / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/allenneverland/Reattach/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/allenneverland/tmux-chat/main/install.sh | sh
 ```
 
-### 2. Start reattachd service
+### 2. Start tmux-chatd service
 
 macOS (launchd example):
 
 ```bash
-mkdir -p ~/Library/Logs/Reattach
-# create and load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist
-launchctl load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist
+mkdir -p ~/Library/Logs/tmux-chat
+# create and load ~/Library/LaunchAgents/com.allenneverland.tmux-chatd.plist
+launchctl load ~/Library/LaunchAgents/com.allenneverland.tmux-chatd.plist
 ```
 
 Linux (systemd example):
 
 ```bash
-# create and enable /etc/systemd/system/reattachd.service
+# create and enable /etc/systemd/system/tmux-chatd.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now reattachd
+sudo systemctl enable --now tmux-chatd
 ```
 
 ### 3. Choose network path for the control URL
@@ -103,7 +105,7 @@ Examples:
 In the iOS app:
 
 1. Tap `Add Server via SSH`.
-2. Enter control plane URL (reattachd URL).
+2. Enter control plane URL (tmux-chatd URL).
 3. Enter SSH host/user/port and authentication.
 4. Continue setup.
 
@@ -111,7 +113,7 @@ The app will:
 
 - verify SSH access
 - install `host-agent` remotely
-- issue control credentials (`reattachd devices issue --json` on host)
+- issue control credentials (`tmux-chatd devices issue --json` on host)
 - run push pairing and APNs registration
 - save server configuration and verify tmux API
 
@@ -120,18 +122,18 @@ The app will:
 Auto install:
 
 ```bash
-reattachd hooks install
+tmux-chatd hooks install
 ```
 
 Manual setup:
 
 - Claude Code (`~/.claude/settings.json`):
-  - `hooks.Stop` matcher `""` command `reattachd notify`
-  - `hooks.Notification` matcher `"permission_prompt"` command `reattachd notify`
+  - `hooks.Stop` matcher `""` command `tmux-chatd notify`
+  - `hooks.Notification` matcher `"permission_prompt"` command `tmux-chatd notify`
 - Codex (`~/.codex/config.toml`, top-level):
 
 ```toml
-notify = ["reattachd", "notify"]
+notify = ["tmux-chatd", "notify"]
 ```
 
 ## Advanced: Manual Device Registration (Troubleshooting)
@@ -139,7 +141,7 @@ notify = ["reattachd", "notify"]
 If SSH onboarding is temporarily unavailable, you can issue credentials manually on host:
 
 ```bash
-reattachd devices issue --name "<device-name>" --json
+tmux-chatd devices issue --name "<device-name>" --json
 ```
 
 Then add the server in app using:
@@ -159,11 +161,11 @@ Then add the server in app using:
 ### Build
 
 ```bash
-git clone https://github.com/allenneverland/Reattach.git
-cd Reattach
+git clone https://github.com/allenneverland/tmux-chat.git
+cd tmux-chat
 
 cp config.local.mk.sample config.local.mk
-cp ios/Reattach/Config.xcconfig.sample ios/Reattach/Config.xcconfig
+cp ios/TmuxChat/Config.xcconfig.sample ios/TmuxChat/Config.xcconfig
 
 make build
 make install
@@ -179,12 +181,26 @@ PUSH_SERVER_BASE_URL = http://127.0.0.1:8790
 PUSH_SERVER_COMPAT_NOTIFY_TOKEN = CHANGE_ME
 ```
 
-`ios/Reattach/Config.xcconfig`:
+`ios/TmuxChat/Config.xcconfig`:
 
 ```xcconfig
 BASE_URL = https:/$()/your-domain.example.com
 PUSH_SERVER_BASE_URL = https://your-push-server.example.com
 ```
+
+### One-click Tailscale-only init
+
+Generate all local templates in one command (interactive):
+
+```bash
+make tailscale-only-init
+```
+
+This writes:
+- `ops/deploy/push-server.env`
+- `config.local.mk`
+- `ios/TmuxChat/Config.xcconfig`
+- `ops/deploy/tmux-chatd.service.tailscale.example`
 
 ### Common Make targets
 
@@ -245,19 +261,19 @@ GET /metrics.json
 Observability templates:
 
 - `ops/observability/prometheus-alert-rules.yml`
-- `ops/observability/grafana-dashboard-reattach-slo.json`
+- `ops/observability/grafana-dashboard-tmux-chat-slo.json`
 
 ## Security Notes
 
-- Reattach enables remote command execution; deploy with care.
-- `reattachd` defaults to `127.0.0.1:8787`.
+- tmux-chat enables remote command execution; deploy with care.
+- `tmux-chatd` defaults to `127.0.0.1:8787`.
 - All control APIs require bearer token credentials.
 - Prefer HTTPS or private network transport.
 - Rotate/revoke unused devices with:
 
 ```bash
-reattachd devices list
-reattachd devices revoke <device-id>
+tmux-chatd devices list
+tmux-chatd devices revoke <device-id>
 ```
 
 ## Breaking Changes Reference

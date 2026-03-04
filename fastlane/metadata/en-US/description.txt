@@ -15,6 +15,6 @@ Access securely from anywhere using VPN or Cloudflare Tunnel.
 【Requirements】
 • macOS or Linux
 • tmux
-• reattachd (free, open source)
+• tmux-chatd (free, open source)
 
-Setup guide: https://github.com/allenneverland/Reattach
+Setup guide: https://github.com/allenneverland/tmux-chat

@@ -56,22 +56,22 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
           fi
-          cargo build --release --target ${{ matrix.target }} -p reattachd -p host-agent
+          cargo build --release --target ${{ matrix.target }} -p tmux-chatd -p host-agent
 
       - name: Package
         run: |
           cd target/${{ matrix.target }}/release
-          tar czvf reattachd-${{ matrix.name }}.tar.gz reattachd
+          tar czvf tmux-chatd-${{ matrix.name }}.tar.gz tmux-chatd
           tar czvf host-agent-${{ matrix.name }}.tar.gz host-agent
-          mv reattachd-${{ matrix.name }}.tar.gz ../../../
+          mv tmux-chatd-${{ matrix.name }}.tar.gz ../../../
           mv host-agent-${{ matrix.name }}.tar.gz ../../../
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: reattachd-${{ matrix.name }}
+          name: tmux-chatd-${{ matrix.name }}
           path: |
-            reattachd-${{ matrix.name }}.tar.gz
+            tmux-chatd-${{ matrix.name }}.tar.gz
             host-agent-${{ matrix.name }}.tar.gz
 
   release:
@@ -116,8 +116,8 @@ jobs:
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
           TAG="${GITHUB_REF_NAME}"
-          ARM_ARCHIVE="artifacts/reattachd-darwin-aarch64/reattachd-darwin-aarch64.tar.gz"
-          INTEL_ARCHIVE="artifacts/reattachd-darwin-x86_64/reattachd-darwin-x86_64.tar.gz"
+          ARM_ARCHIVE="artifacts/tmux-chatd-darwin-aarch64/tmux-chatd-darwin-aarch64.tar.gz"
+          INTEL_ARCHIVE="artifacts/tmux-chatd-darwin-x86_64/tmux-chatd-darwin-x86_64.tar.gz"
           ARM_SHA="$(sha256sum "$ARM_ARCHIVE" | awk '{print $1}')"
           INTEL_SHA="$(sha256sum "$INTEL_ARCHIVE" | awk '{print $1}')"
 
@@ -132,43 +132,43 @@ jobs:
         if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         uses: actions/checkout@v4
         with:
-          repository: kumabook/homebrew-reattach
+          repository: allenneverland/homebrew-tmux-chat
           token: ${{ env.HOMEBREW_TAP_TOKEN }}
           path: tap
 
       - name: Update Formula
         if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         run: |
-          cat > tap/Formula/reattachd.rb <<EOF
-          class Reattachd < Formula
+          cat > tap/Formula/tmux-chatd.rb <<EOF
+          class TmuxChatd < Formula
             desc "Remote control daemon for tmux sessions"
-            homepage "https://github.com/kumabook/Reattach"
+            homepage "https://github.com/allenneverland/tmux-chat"
             version "${{ steps.meta.outputs.version }}"
             license "MIT"
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/kumabook/Reattach/releases/download/${{ steps.meta.outputs.tag }}/reattachd-darwin-aarch64.tar.gz"
+                url "https://github.com/allenneverland/tmux-chat/releases/download/${{ steps.meta.outputs.tag }}/tmux-chatd-darwin-aarch64.tar.gz"
                 sha256 "${{ steps.meta.outputs.arm_sha }}"
               else
-                url "https://github.com/kumabook/Reattach/releases/download/${{ steps.meta.outputs.tag }}/reattachd-darwin-x86_64.tar.gz"
+                url "https://github.com/allenneverland/tmux-chat/releases/download/${{ steps.meta.outputs.tag }}/tmux-chatd-darwin-x86_64.tar.gz"
                 sha256 "${{ steps.meta.outputs.intel_sha }}"
               end
             end
 
             def install
-              bin.install "reattachd"
+              bin.install "tmux-chatd"
             end
 
             service do
-              run [opt_bin/"reattachd"]
+              run [opt_bin/"tmux-chatd"]
               keep_alive true
-              log_path var/"log/reattachd.log"
-              error_log_path var/"log/reattachd.error.log"
+              log_path var/"log/tmux-chatd.log"
+              error_log_path var/"log/tmux-chatd.error.log"
             end
 
             test do
-              assert_match "reattachd", shell_output("#{bin}/reattachd --help")
+              assert_match "tmux-chatd", shell_output("#{bin}/tmux-chatd --help")
             end
           end
           EOF
@@ -177,12 +177,12 @@ jobs:
         if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         run: |
           cd tap
-          if git diff --quiet -- Formula/reattachd.rb; then
+          if git diff --quiet -- Formula/tmux-chatd.rb; then
             echo "No Homebrew formula changes detected."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/reattachd.rb
-          git commit -m "Update reattachd formula to ${{ steps.meta.outputs.tag }}"
+          git add Formula/tmux-chatd.rb
+          git commit -m "Update tmux-chatd formula to ${{ steps.meta.outputs.tag }}"
           git push

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Setup Guide - Reattach</title>
-    <meta name="description" content="How to set up reattachd on your Mac or Linux machine.">
+    <title>Setup Guide - tmux-chat</title>
+    <meta name="description" content="How to set up tmux-chatd on your Mac or Linux machine.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -240,13 +240,13 @@
     <header>
         <nav>
             <a href="/" class="logo">
-                <img src="app-icon.png" alt="Reattach" class="logo-icon">
-                Reattach
+                <img src="app-icon.png" alt="tmux-chat" class="logo-icon">
+                tmux-chat
             </a>
             <div class="nav-links">
                 <a href="/">Home</a>
                 <a href="/setup.html" class="active">Setup</a>
-                <a href="https://github.com/allenneverland/Reattach">GitHub</a>
+                <a href="https://github.com/allenneverland/tmux-chat">GitHub</a>
                 <a href="/ja/setup.html">日本語</a>
             </div>
         </nav>
@@ -257,15 +257,15 @@
             <h1>Setup Guide</h1>
 
             <div class="note" style="background: rgba(255, 149, 0, 0.1); border-color: rgba(255, 149, 0, 0.3);">
-                <p><strong>⚠️ Use at your own risk.</strong> Reattach allows remote command execution on your machine. Please understand the security implications before using this software. reattachd includes device-based authentication, but for internet-exposed setups, we recommend adding additional security layers (VPN, Cloudflare Zero Trust, etc.).</p>
+                <p><strong>⚠️ Use at your own risk.</strong> tmux-chat allows remote command execution on your machine. Please understand the security implications before using this software. tmux-chatd includes device-based authentication, but for internet-exposed setups, we recommend adding additional security layers (VPN, Cloudflare Zero Trust, etc.).</p>
             </div>
 
             <div class="step">
                 <span class="step-number">1</span>
-                <span class="step-title">Install reattachd</span>
+                <span class="step-title">Install tmux-chatd</span>
                 <div class="step-content">
                     <p>Run this command on your computer:</p>
-                    <pre><code>curl -fsSL https://raw.githubusercontent.com/allenneverland/Reattach/main/install.sh | sh</code></pre>
+                    <pre><code>curl -fsSL https://raw.githubusercontent.com/allenneverland/tmux-chat/main/install.sh | sh</code></pre>
                 </div>
             </div>
 
@@ -275,34 +275,34 @@
                 <div class="step-content">
                     <h3>macOS (launchd)</h3>
                     <pre><code># Create log directory
-mkdir -p ~/Library/Logs/Reattach
+mkdir -p ~/Library/Logs/tmux-chat
 
 # Create plist file
-cat > ~/Library/LaunchAgents/com.allenneverland.reattachd.plist << 'EOF'
+cat > ~/Library/LaunchAgents/com.allenneverland.tmux-chatd.plist << 'EOF'
 &lt;?xml version="1.0" encoding="UTF-8"?&gt;
 &lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
 &lt;plist version="1.0"&gt;
 &lt;dict&gt;
     &lt;key&gt;Label&lt;/key&gt;
-    &lt;string&gt;com.allenneverland.reattachd&lt;/string&gt;
+    &lt;string&gt;com.allenneverland.tmux-chatd&lt;/string&gt;
     &lt;key&gt;ProgramArguments&lt;/key&gt;
     &lt;array&gt;
-        &lt;string&gt;/usr/local/bin/reattachd&lt;/string&gt;
+        &lt;string&gt;/usr/local/bin/tmux-chatd&lt;/string&gt;
     &lt;/array&gt;
     &lt;key&gt;RunAtLoad&lt;/key&gt;
     &lt;true/&gt;
     &lt;key&gt;KeepAlive&lt;/key&gt;
     &lt;true/&gt;
     &lt;key&gt;StandardOutPath&lt;/key&gt;
-    &lt;string&gt;~/Library/Logs/Reattach/reattachd.log&lt;/string&gt;
+    &lt;string&gt;~/Library/Logs/tmux-chat/tmux-chatd.log&lt;/string&gt;
     &lt;key&gt;StandardErrorPath&lt;/key&gt;
-    &lt;string&gt;~/Library/Logs/Reattach/reattachd.error.log&lt;/string&gt;
+    &lt;string&gt;~/Library/Logs/tmux-chat/tmux-chatd.error.log&lt;/string&gt;
     &lt;key&gt;EnvironmentVariables&lt;/key&gt;
     &lt;dict&gt;
-        &lt;key&gt;REATTACHD_PORT&lt;/key&gt;
+        &lt;key&gt;TMUX_CHATD_PORT&lt;/key&gt;
         &lt;string&gt;8787&lt;/string&gt;
         &lt;!-- Uncomment to allow local network access (default: 127.0.0.1) --&gt;
-        &lt;!-- &lt;key&gt;REATTACHD_BIND_ADDR&lt;/key&gt; --&gt;
+        &lt;!-- &lt;key&gt;TMUX_CHATD_BIND_ADDR&lt;/key&gt; --&gt;
         &lt;!-- &lt;string&gt;0.0.0.0&lt;/string&gt; --&gt;
         &lt;key&gt;PATH&lt;/key&gt;
         &lt;string&gt;/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin&lt;/string&gt;
@@ -312,22 +312,22 @@ cat > ~/Library/LaunchAgents/com.allenneverland.reattachd.plist << 'EOF'
 EOF
 
 # Load and start
-launchctl load ~/Library/LaunchAgents/com.allenneverland.reattachd.plist</code></pre>
+launchctl load ~/Library/LaunchAgents/com.allenneverland.tmux-chatd.plist</code></pre>
 
                     <h3>Linux (systemd)</h3>
                     <pre><code># Create service file
-sudo tee /etc/systemd/system/reattachd.service << 'EOF'
+sudo tee /etc/systemd/system/tmux-chatd.service << 'EOF'
 [Unit]
-Description=Reattach Daemon
+Description=tmux-chat Daemon
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/reattachd
+ExecStart=/usr/local/bin/tmux-chatd
 Restart=always
-Environment=REATTACHD_PORT=8787
+Environment=TMUX_CHATD_PORT=8787
 # Uncomment to allow local network access (default: 127.0.0.1)
-# Environment=REATTACHD_BIND_ADDR=0.0.0.0
+# Environment=TMUX_CHATD_BIND_ADDR=0.0.0.0
 
 [Install]
 WantedBy=multi-user.target
@@ -335,8 +335,8 @@ EOF
 
 # Enable and start
 sudo systemctl daemon-reload
-sudo systemctl enable reattachd
-sudo systemctl start reattachd</code></pre>
+sudo systemctl enable tmux-chatd
+sudo systemctl start tmux-chatd</code></pre>
                 </div>
             </div>
 
@@ -344,7 +344,7 @@ sudo systemctl start reattachd</code></pre>
                 <span class="step-number">3</span>
                 <span class="step-title">Configure network access</span>
                 <div class="step-content">
-                    <p>Choose how your iOS device will connect to reattachd:</p>
+                    <p>Choose how your iOS device will connect to tmux-chatd:</p>
 
                     <h2 style="font-size: 1.2rem; margin-top: 24px; border: none; padding: 0;">Local Network</h2>
 
@@ -376,9 +376,9 @@ URL: https://your-domain.com:8787</code></pre>
                 <span class="step-number">4</span>
                 <span class="step-title">Add server via SSH onboarding</span>
                 <div class="step-content">
-                    <p>Open the Reattach iOS app and select <strong>Add Server via SSH</strong>.</p>
+                    <p>Open the tmux-chat iOS app and select <strong>Add Server via SSH</strong>.</p>
                     <ol style="color: var(--text-secondary); padding-left: 24px; margin-bottom: 0;">
-                        <li>Enter your control URL (reattachd URL).</li>
+                        <li>Enter your control URL (tmux-chatd URL).</li>
                         <li>Enter SSH host, port, username, and authentication credentials.</li>
                         <li>Tap Connect and Install.</li>
                     </ol>
@@ -391,12 +391,12 @@ URL: https://your-domain.com:8787</code></pre>
                 <span class="step-title">Set up coding agent notifications (Optional)</span>
                 <div class="step-content">
                     <p><strong>Recommended:</strong> install hooks for Claude Code and Codex automatically:</p>
-                    <pre><code>reattachd hooks install</code></pre>
+                    <pre><code>tmux-chatd hooks install</code></pre>
 
                     <p><strong>Manual setup:</strong></p>
-                    <p>Claude Code (<code>~/.claude/settings.json</code>) should include both <code>hooks.Stop</code> (matcher: <code>""</code>) and <code>hooks.Notification</code> (matcher: <code>"permission_prompt"</code>) with command <code>reattachd notify</code>.</p>
+                    <p>Claude Code (<code>~/.claude/settings.json</code>) should include both <code>hooks.Stop</code> (matcher: <code>""</code>) and <code>hooks.Notification</code> (matcher: <code>"permission_prompt"</code>) with command <code>tmux-chatd notify</code>.</p>
                     <p>Codex (<code>~/.codex/config.toml</code>) should include this top-level setting (not inside another table such as <code>[sandbox_workspace_write]</code>):</p>
-                    <pre><code>notify = ["reattachd", "notify"]</code></pre>
+                    <pre><code>notify = ["tmux-chatd", "notify"]</code></pre>
 
                     <p>Restart Codex after editing config, then trigger one turn to verify push notifications arrive on iOS.</p>
                 </div>
@@ -407,13 +407,13 @@ URL: https://your-domain.com:8787</code></pre>
                 <span class="step-title">Advanced fallback: issue device token manually</span>
                 <div class="step-content">
                     <p>If SSH onboarding is temporarily unavailable, issue credentials directly on host:</p>
-                    <pre><code>reattachd devices issue --name "&lt;device-name&gt;" --json</code></pre>
+                    <pre><code>tmux-chatd devices issue --name "&lt;device-name&gt;" --json</code></pre>
                     <p>Then add the server manually in app using <code>device_id</code> and <code>device_token</code>.</p>
                 </div>
             </div>
 
             <div class="note">
-                <p><strong>Need help?</strong> Check out the <a href="https://github.com/allenneverland/Reattach">GitHub repository</a> for more details and troubleshooting.</p>
+                <p><strong>Need help?</strong> Check out the <a href="https://github.com/allenneverland/tmux-chat">GitHub repository</a> for more details and troubleshooting.</p>
             </div>
         </div>
     </main>
@@ -422,7 +422,7 @@ URL: https://your-domain.com:8787</code></pre>
         <div class="container">
             <p>
                 Built with ❤️ by <a href="https://github.com/allenneverland">allenneverland</a> ・
-                <a href="https://github.com/allenneverland/Reattach">Source Code</a> ・
+                <a href="https://github.com/allenneverland/tmux-chat">Source Code</a> ・
                 MIT License
             </p>
         </div>

@@ -1,17 +1,17 @@
-# Reattach Makefile
+# tmux-chat Makefile
 
 PROJECT_ROOT := $(shell pwd)
-REATTACHD_PATH := $(PROJECT_ROOT)/target/release/reattachd
+TMUX_CHATD_PATH := $(PROJECT_ROOT)/target/release/tmux-chatd
 CLOUDFLARED_PATH := $(shell which cloudflared)
 CARGO := $(HOME)/.cargo/bin/cargo
 DOCKER ?= docker
-LOG_DIR := $(HOME)/Library/Logs/Reattach
+LOG_DIR := $(HOME)/Library/Logs/tmux-chat
 LAUNCH_AGENTS_DIR := $(HOME)/Library/LaunchAgents
-PUSH_SERVER_IMAGE ?= reattach-push-server:local
-PUSH_SERVER_DEV_IMAGE ?= reattach-push-server-dev:local
-PUSH_SERVER_CONTAINER_NAME ?= reattach-push-server
+PUSH_SERVER_IMAGE ?= tmux-chat-push-server:local
+PUSH_SERVER_DEV_IMAGE ?= tmux-chat-push-server-dev:local
+PUSH_SERVER_CONTAINER_NAME ?= tmux-chat-push-server
 PUSH_SERVER_ENV_FILE ?= ops/deploy/push-server.env
-PUSH_SERVER_HOST_DATA_DIR ?= /var/lib/reattach/push-server
+PUSH_SERVER_HOST_DATA_DIR ?= /var/lib/tmux-chat/push-server
 PUSH_SERVER_HOST_PORT ?= 8790
 PUSH_SERVER_CONTAINER_PORT ?= 8790
 
@@ -25,48 +25,49 @@ PUSH_SERVER_COMPAT_NOTIFY_TOKEN ?=
 .PHONY: all build install uninstall start stop restart reinstall logs clean install-hooks uninstall-hooks \
 	push-server-docker-dev-image push-server-docker-fmt push-server-docker-test \
 	push-server-docker-build push-server-docker-image push-server-docker-run \
-	push-server-env-init push-server-deploy push-server-stop push-server-status push-server-logs
+	push-server-env-init push-server-deploy push-server-stop push-server-status push-server-logs \
+	tailscale-only-init
 
 all: build
 
-# Build reattachd
+# Build tmux-chatd
 build:
-	$(CARGO) build --release -p reattachd
+	$(CARGO) build --release -p tmux-chatd
 
 # Install launchd services
 install: build
 	@mkdir -p $(LOG_DIR)
 	@mkdir -p $(LAUNCH_AGENTS_DIR)
-	@sed -e 's|{{REATTACHD_PATH}}|$(REATTACHD_PATH)|g' \
+	@sed -e 's|{{TMUX_CHATD_PATH}}|$(TMUX_CHATD_PATH)|g' \
 	     -e 's|{{LOG_DIR}}|$(LOG_DIR)|g' \
 	     -e 's|{{PUSH_SERVER_BASE_URL}}|$(PUSH_SERVER_BASE_URL)|g' \
 	     -e 's|{{PUSH_SERVER_COMPAT_NOTIFY_TOKEN}}|$(PUSH_SERVER_COMPAT_NOTIFY_TOKEN)|g' \
-	     launchd/com.allenneverland.reattachd.plist > $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist
+	     launchd/com.allenneverland.tmux-chatd.plist > $(LAUNCH_AGENTS_DIR)/com.allenneverland.tmux-chatd.plist
 	@sed -e 's|{{CLOUDFLARED_PATH}}|$(CLOUDFLARED_PATH)|g' \
 	     -e 's|{{LOG_DIR}}|$(LOG_DIR)|g' \
-	     launchd/com.allenneverland.cloudflared-reattach.plist > $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist
+	     launchd/com.allenneverland.cloudflared-tmux-chat.plist > $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-tmux-chat.plist
 	@echo "Installed launchd services"
-	@echo "  - $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist"
-	@echo "  - $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist"
+	@echo "  - $(LAUNCH_AGENTS_DIR)/com.allenneverland.tmux-chatd.plist"
+	@echo "  - $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-tmux-chat.plist"
 	@echo ""
 	@echo "Run 'make start' to start services"
 
 # Uninstall launchd services
 uninstall: stop
-	@rm -f $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist
-	@rm -f $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist
+	@rm -f $(LAUNCH_AGENTS_DIR)/com.allenneverland.tmux-chatd.plist
+	@rm -f $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-tmux-chat.plist
 	@echo "Uninstalled launchd services"
 
 # Start services
 start:
-	@launchctl load $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist 2>/dev/null || true
-	@launchctl load $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist 2>/dev/null || true
+	@launchctl load $(LAUNCH_AGENTS_DIR)/com.allenneverland.tmux-chatd.plist 2>/dev/null || true
+	@launchctl load $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-tmux-chat.plist 2>/dev/null || true
 	@echo "Started services"
 
 # Stop services
 stop:
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.allenneverland.reattachd.plist 2>/dev/null || true
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-reattach.plist 2>/dev/null || true
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.allenneverland.tmux-chatd.plist 2>/dev/null || true
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.allenneverland.cloudflared-tmux-chat.plist 2>/dev/null || true
 	@echo "Stopped services"
 
 # Restart services
@@ -76,34 +77,34 @@ reinstall: stop install start
 
 # View logs
 logs:
-	@echo "=== reattachd logs ==="
-	@tail -50 $(LOG_DIR)/reattachd.log 2>/dev/null || echo "No logs yet"
+	@echo "=== tmux-chatd logs ==="
+	@tail -50 $(LOG_DIR)/tmux-chatd.log 2>/dev/null || echo "No logs yet"
 	@echo ""
-	@echo "=== reattachd error logs ==="
-	@tail -20 $(LOG_DIR)/reattachd.error.log 2>/dev/null || echo "No error logs"
+	@echo "=== tmux-chatd error logs ==="
+	@tail -20 $(LOG_DIR)/tmux-chatd.error.log 2>/dev/null || echo "No error logs"
 	@echo ""
 	@echo "=== cloudflared logs ==="
-	@tail -50 $(LOG_DIR)/cloudflared-reattach.log 2>/dev/null || echo "No logs yet"
+	@tail -50 $(LOG_DIR)/cloudflared-tmux-chat.log 2>/dev/null || echo "No logs yet"
 
 # Follow logs in real-time
 logs-follow:
-	@tail -f $(LOG_DIR)/reattachd.log $(LOG_DIR)/cloudflared-reattach.log
+	@tail -f $(LOG_DIR)/tmux-chatd.log $(LOG_DIR)/cloudflared-tmux-chat.log
 
 # Check service status
 status:
 	@echo "=== Service Status ==="
-	@launchctl list | grep -E "allenneverland\.(reattachd|cloudflared)" || echo "No services running"
+	@launchctl list | grep -E "allenneverland\.(tmux-chatd|cloudflared)" || echo "No services running"
 	@echo ""
 	@echo "=== Process Check ==="
-	@ps aux | grep -E "(reattachd|cloudflared.*reattach)" | grep -v grep || echo "No processes found"
+	@ps aux | grep -E "(tmux-chatd|cloudflared.*tmux-chat)" | grep -v grep || echo "No processes found"
 
 # Install coding agent hooks (Claude Code + Codex)
 install-hooks:
-	@reattachd hooks install
+	@tmux-chatd hooks install
 
 # Uninstall coding agent hooks (Claude Code + Codex)
 uninstall-hooks:
-	@reattachd hooks uninstall
+	@tmux-chatd hooks uninstall
 
 # Clean build artifacts
 clean:
@@ -165,3 +166,8 @@ push-server-status:
 # Follow push-server logs.
 push-server-logs:
 	@$(DOCKER) logs -f "$(PUSH_SERVER_CONTAINER_NAME)"
+
+# One-click Tailscale-only initialization for local config files.
+tailscale-only-init:
+	@PUSH_SERVER_ENV_FILE="$(PUSH_SERVER_ENV_FILE)" \
+		ops/deploy/tailscale-only-init.sh

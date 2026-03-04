@@ -1,4 +1,4 @@
-# Reattach Breaking Changes (Flag Day 2026)
+# tmux-chat Breaking Changes (Flag Day 2026)
 
 ## Status
 
@@ -9,23 +9,23 @@
 
 ## Why this change
 
-Reattach has moved to the blueprint architecture:
+tmux-chat has moved to the blueprint architecture:
 
 - iOS onboarding is SSH-first.
 - Notifications are delivered by `host-agent -> push-server -> APNs`.
-- tmux remote control APIs stay available via `reattachd`.
+- tmux remote control APIs stay available via `tmux-chatd`.
 
 This migration removes legacy setup paths that caused product and operational drift.
 
 ## Breaking changes
 
 1. QR onboarding removed
-- `reattachd setup --url ...` is no longer supported.
+- `tmux-chatd setup --url ...` is no longer supported.
 - iOS QR scanner onboarding is removed.
 
 2. Cloudflare Access Service Token compatibility removed
 - App-side Service Token credential fields/headers are removed.
-- Reattach no longer documents Service Token-based app authentication flow.
+- tmux-chat no longer documents Service Token-based app authentication flow.
 
 3. Open mode removed
 - Control APIs require bearer token authentication.
@@ -41,8 +41,8 @@ This migration removes legacy setup paths that caused product and operational dr
 - `DELETE /panes/{target}`
 
 2. Coding-agent compatibility path remains:
-- `reattachd notify`
-- `reattachd hooks install`
+- `tmux-chatd notify`
+- `tmux-chatd hooks install`
 
 3. Notification routing key remains:
 - `deviceId + paneTarget`
@@ -67,7 +67,7 @@ This migration removes legacy setup paths that caused product and operational dr
 If migration issues occur, include these in your report:
 
 - host OS and architecture
-- `reattachd` version
+- `tmux-chatd` version
 - `host-agent status --json` output
 - whether tmux bell hooks are active
 - relevant timestamps (UTC)

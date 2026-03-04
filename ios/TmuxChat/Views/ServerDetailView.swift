@@ -1,0 +1,91 @@
+//
+//  ServerDetailView.swift
+//  TmuxChat
+//
+
+import SwiftUI
+
+struct ServerDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var configManager = ServerConfigManager.shared
+
+    let server: ServerConfig
+
+    @State private var serverName: String = ""
+    @State private var showDeleteConfirmation = false
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Name") {
+                    TextField("Server Name", text: $serverName)
+                        .multilineTextAlignment(.trailing)
+                }
+                LabeledContent("URL", value: server.serverURL)
+            } header: {
+                Text("Server")
+            }
+
+            Section("Notifications") {
+                NavigationLink {
+                    NotificationMutesView(server: server)
+                } label: {
+                    Label("Mute Settings", systemImage: "bell.slash")
+                }
+            }
+
+            Section {
+                Button(role: .destructive) {
+                    showDeleteConfirmation = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("Delete Server")
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Delete Server", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                configManager.removeServer(server.id)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to delete \(server.serverName)?")
+        }
+        .navigationTitle("Server Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    saveChanges()
+                    dismiss()
+                }
+            }
+        }
+        .onAppear {
+            serverName = server.serverName
+        }
+    }
+
+    private func saveChanges() {
+        var updatedServer = server
+        updatedServer.serverName = serverName
+        configManager.updateServer(updatedServer)
+    }
+}
+
+#Preview {
+    NavigationStack {
+        ServerDetailView(server: ServerConfig(
+            serverURL: "https://example.com",
+            controlToken: "token",
+            deviceId: "device-id",
+            deviceName: "My Mac",
+            serverName: "Home Server",
+            registeredAt: Date()
+        ))
+    }
+}

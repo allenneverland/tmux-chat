@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-REPO="allenneverland/Reattach"
-BINARY="reattachd"
+REPO="allenneverland/tmux-chat"
+BINARY="tmux-chatd"
 
 # Detect OS
 OS="$(uname -s)"
@@ -47,7 +47,7 @@ fi
 echo "Latest version: $LATEST"
 
 # Download URL
-URL="https://github.com/$REPO/releases/download/$LATEST/reattachd-$PLATFORM.tar.gz"
+URL="https://github.com/$REPO/releases/download/$LATEST/tmux-chatd-$PLATFORM.tar.gz"
 echo "Downloading from: $URL"
 
 # Create temp directory
@@ -89,4 +89,4 @@ if [ "$INSTALL_DIR" != "/usr/local/bin" ]; then
     echo ""
 fi
 
-echo "Run 'reattachd --help' to get started"
+echo "Run 'tmux-chatd --help' to get started"
