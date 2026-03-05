@@ -245,8 +245,8 @@ __tmux_chat_notify_install_debug_hook() {{
   fi
 
   if [[ "$debug_trap" == "trap -- "* ]]; then
-    existing="${debug_trap#trap -- \'}"
-    existing="${existing%\' DEBUG}"
+    existing="${{debug_trap#trap -- \'}}"
+    existing="${{existing%\' DEBUG}}"
     TMUX_CHAT_NOTIFY_PREV_DEBUG_TRAP="$existing"
     trap '__tmux_chat_notify_before_command; eval "$TMUX_CHAT_NOTIFY_PREV_DEBUG_TRAP"' DEBUG
   else
