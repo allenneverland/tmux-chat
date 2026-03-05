@@ -759,7 +759,7 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
             "PUSH_SERVER_COMPAT_NOTIFY_TOKEN is empty; /notify forwarding will likely fail authentication"
         );
     }
-    let notify_forwarder = Arc::new(api::NotifyForwarder::new(
+    let notify_forwarder: api::SharedNotifyForwarder = Arc::new(api::NotifyForwarder::new(
         push_server_base_url,
         compat_notify_token,
     ));

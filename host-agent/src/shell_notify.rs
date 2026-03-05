@@ -520,7 +520,8 @@ fn bash_from_command_v() -> Option<PathBuf> {
         .output()
         .ok()?;
 
-    let candidate = String::from_utf8_lossy(&output.stdout)
+    let stdout_lossy = String::from_utf8_lossy(&output.stdout);
+    let candidate = stdout_lossy
         .lines()
         .next()
         .map(str::trim)
