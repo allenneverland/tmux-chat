@@ -4,6 +4,10 @@
 <dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>HostAgentReleaseTag</key>
+	<string>v1.0.14</string>
+	<key>HostAgentRequiredStatusSchemaVersion</key>
+	<integer>2</integer>
 	<key>PushServerBaseURL</key>
 	<string>$(PUSH_SERVER_BASE_URL)</string>
 	<key>kMDItemKeywords</key>

@@ -11,6 +11,9 @@ pub struct AgentPaths {
     pub socket_path: PathBuf,
     pub tmux_conf_path: PathBuf,
     pub bashrc_path: PathBuf,
+    pub bash_profile_path: PathBuf,
+    pub bash_login_path: PathBuf,
+    pub profile_path: PathBuf,
     pub bash_auto_notify_script_path: PathBuf,
     pub launchd_plist_path: PathBuf,
     pub launchd_log_dir: PathBuf,
@@ -34,6 +37,9 @@ impl AgentPaths {
         let socket_path = runtime_dir.join("bell.sock");
         let tmux_conf_path = home.join(".tmux.conf");
         let bashrc_path = home.join(".bashrc");
+        let bash_profile_path = home.join(".bash_profile");
+        let bash_login_path = home.join(".bash_login");
+        let profile_path = home.join(".profile");
         let bash_auto_notify_script_path = home
             .join(".local")
             .join("lib")
@@ -58,6 +64,9 @@ impl AgentPaths {
             socket_path,
             tmux_conf_path,
             bashrc_path,
+            bash_profile_path,
+            bash_login_path,
+            profile_path,
             bash_auto_notify_script_path,
             launchd_plist_path,
             launchd_log_dir,

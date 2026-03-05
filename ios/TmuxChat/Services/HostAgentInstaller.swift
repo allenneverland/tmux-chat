@@ -25,10 +25,48 @@ struct HostAgentPlatform: Equatable {
     let releaseAssetName: String
 }
 
+struct HostAgentRuntimeConfig: Equatable {
+    let hostAgentReleaseTag: String
+    let requiredStatusSchemaVersion: Int
+
+    static func fromBundle(_ bundle: Bundle = .main) -> HostAgentRuntimeConfig {
+        let releaseTag = (bundle.object(forInfoDictionaryKey: "HostAgentReleaseTag") as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let requiredSchemaValue = bundle.object(forInfoDictionaryKey: "HostAgentRequiredStatusSchemaVersion")
+
+        let requiredStatusSchemaVersion: Int
+        if let number = requiredSchemaValue as? NSNumber {
+            requiredStatusSchemaVersion = number.intValue
+        } else if let string = requiredSchemaValue as? String {
+            requiredStatusSchemaVersion = Int(string.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        } else {
+            requiredStatusSchemaVersion = 0
+        }
+
+        return HostAgentRuntimeConfig(
+            hostAgentReleaseTag: releaseTag,
+            requiredStatusSchemaVersion: requiredStatusSchemaVersion
+        )
+    }
+}
+
 final class HostAgentInstaller {
     private let sshExecutor: SSHCommandExecuting
+    private let runtimeConfig: HostAgentRuntimeConfig
 
     private struct HostAgentStatusResponse: Decodable {
+        struct HostAgentStatusFeatures: Decodable {
+            let bashAutoNotifyRuntimeProbe: Bool?
+
+            enum CodingKeys: String, CodingKey {
+                case bashAutoNotifyRuntimeProbe = "bash_auto_notify_runtime_probe"
+            }
+        }
+
+        let daemon: String?
+        let version: String?
+        let statusSchemaVersion: Int?
+        let features: HostAgentStatusFeatures?
         let notificationReady: Bool?
         let readinessErrors: [String]?
 
@@ -38,9 +76,16 @@ final class HostAgentInstaller {
         let tmuxMonitorBell: String?
         let tmuxBellAction: String?
         let bashAutoNotifyConfigured: Bool?
+        let bashAutoNotifyRuntimeProbe: Bool?
+        let bashRuntimeProbeDetail: String?
+        let bashBinaryPath: String?
         let serviceActive: Bool?
 
         enum CodingKeys: String, CodingKey {
+            case daemon
+            case version
+            case statusSchemaVersion = "status_schema_version"
+            case features
             case notificationReady = "notification_ready"
             case readinessErrors = "readiness_errors"
             case paired
@@ -49,12 +94,16 @@ final class HostAgentInstaller {
             case tmuxMonitorBell = "tmux_monitor_bell"
             case tmuxBellAction = "tmux_bell_action"
             case bashAutoNotifyConfigured = "bash_auto_notify_configured"
+            case bashAutoNotifyRuntimeProbe = "bash_auto_notify_runtime_probe"
+            case bashRuntimeProbeDetail = "bash_runtime_probe_detail"
+            case bashBinaryPath = "bash_binary_path"
             case serviceActive = "service_active"
         }
     }
 
-    init(sshExecutor: SSHCommandExecuting) {
+    init(sshExecutor: SSHCommandExecuting, runtimeConfig: HostAgentRuntimeConfig = .fromBundle()) {
         self.sshExecutor = sshExecutor
+        self.runtimeConfig = runtimeConfig
     }
 
     func ensureTmuxChatdInstalled(on connection: SSHConnectionSpec) async throws -> String {
@@ -116,7 +165,8 @@ final class HostAgentInstaller {
         pushServerBaseURL: String,
         releaseAssetName: String
     ) async throws {
-        let url = "https://github.com/allenneverland/tmux-chat/releases/latest/download/\(releaseAssetName)"
+        let releaseTag = try requireHostAgentReleaseTag()
+        let url = "https://github.com/allenneverland/tmux-chat/releases/download/\(releaseTag)/\(releaseAssetName)"
         let script = """
         set -eu
         TMPDIR="$(mktemp -d)"
@@ -135,7 +185,10 @@ final class HostAgentInstaller {
         }
 
         mkdir -p "$HOME/.local/bin"
-        download \(shellQuote(url)) "$TMPDIR/host-agent.tgz"
+        if ! download \(shellQuote(url)) "$TMPDIR/host-agent.tgz"; then
+          echo "failed to download host-agent archive from \(shellQuote(url))" >&2
+          exit 1
+        fi
         tar -xzf "$TMPDIR/host-agent.tgz" -C "$TMPDIR"
 
         BIN="$(find "$TMPDIR" -type f -name host-agent | head -n 1)"
@@ -145,6 +198,10 @@ final class HostAgentInstaller {
         fi
 
         install -m 755 "$BIN" "$HOME/.local/bin/host-agent"
+        export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+        if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "$XDG_RUNTIME_DIR/bus" ]; then
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+        fi
         "$HOME/.local/bin/host-agent" install --push-server-base-url \(shellQuote(pushServerBaseURL))
         """
 
@@ -156,28 +213,53 @@ final class HostAgentInstaller {
         pairingToken: String,
         pushServerBaseURL: String
     ) async throws -> String {
-        let command = "\"$HOME/.local/bin/host-agent\" pair --token \(shellQuote(pairingToken)) --push-server-base-url \(shellQuote(pushServerBaseURL)) --json"
-        let result = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(command))", on: connection)
+        let command = hostAgentCommand(
+            "pair --token \(shellQuote(pairingToken)) --push-server-base-url \(shellQuote(pushServerBaseURL)) --json"
+        )
+        let result = try await sshExecutor.run(command: command, on: connection)
         return result.stdout
     }
 
     func installBashAutoNotify(on connection: SSHConnectionSpec, minSeconds: Int = 3) async throws {
         let threshold = max(1, minSeconds)
-        let command = "\"$HOME/.local/bin/host-agent\" install-shell-notify --min-seconds \(threshold)"
-        _ = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(command))", on: connection)
+        let installCommand = hostAgentCommand("install-shell-notify --min-seconds \(threshold)")
+        _ = try await sshExecutor.run(command: installCommand, on: connection)
+
+        let statusCommand = hostAgentCommand("status --json")
+        let statusResult = try await sshExecutor.run(command: statusCommand, on: connection)
+        let status = try decodeJSONFromOutput(statusResult.stdout, as: HostAgentStatusResponse.self)
+        try assertStatusCompatibility(status)
+        let readiness = status.readinessErrors?.joined(separator: ", ") ?? "none"
+        let probeDetail = status.bashRuntimeProbeDetail ?? "unknown"
+        let bashBinaryPath = status.bashBinaryPath ?? "unknown"
+
+        guard status.bashAutoNotifyConfigured == true else {
+            throw APIError.serverError(
+                "Host-agent bash auto-notify is not configured after install (bash_auto_notify_configured=false, bash_runtime_probe_detail=\(probeDetail), bash_binary_path=\(bashBinaryPath), readiness_errors=\(readiness))."
+            )
+        }
+
+        guard status.bashAutoNotifyRuntimeProbe == true else {
+            let probeValue = status.bashAutoNotifyRuntimeProbe.map { String($0) } ?? "null"
+            throw APIError.serverError(
+                "Host-agent bash auto-notify runtime probe failed after install (bash_auto_notify_runtime_probe=\(probeValue), bash_runtime_probe_detail=\(probeDetail), bash_binary_path=\(bashBinaryPath), readiness_errors=\(readiness))."
+            )
+        }
     }
 
     func verifyHostAgentReadiness(on connection: SSHConnectionSpec) async throws {
-        let command = "\"$HOME/.local/bin/host-agent\" status --json"
-        let result = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(command))", on: connection)
+        let command = hostAgentCommand("status --json")
+        let result = try await sshExecutor.run(command: command, on: connection)
         let status = try decodeJSONFromOutput(result.stdout, as: HostAgentStatusResponse.self)
+        try assertStatusCompatibility(status)
 
         let inferredReady = (status.paired == true)
             && (status.socketConnectable == true)
             && (status.tmuxHookActive == true)
             && (status.tmuxMonitorBell == "on")
             && (status.tmuxBellAction == "any")
-            && (status.bashAutoNotifyConfigured ?? true)
+            && (status.bashAutoNotifyConfigured == true)
+            && (status.bashAutoNotifyRuntimeProbe ?? true)
             && (status.serviceActive == true)
         let ready = status.notificationReady ?? inferredReady
         guard ready else {
@@ -187,7 +269,7 @@ final class HostAgentInstaller {
             } else {
                 let serviceActiveText = status.serviceActive.map { $0 ? "true" : "false" } ?? "unknown"
                 details =
-                    "paired=\(status.paired == true), socket_connectable=\(status.socketConnectable == true), tmux_hook_active=\(status.tmuxHookActive == true), tmux_monitor_bell=\(status.tmuxMonitorBell ?? "unknown"), tmux_bell_action=\(status.tmuxBellAction ?? "unknown"), bash_auto_notify_configured=\(status.bashAutoNotifyConfigured == true), service_active=\(serviceActiveText)"
+                    "paired=\(status.paired == true), socket_connectable=\(status.socketConnectable == true), tmux_hook_active=\(status.tmuxHookActive == true), tmux_monitor_bell=\(status.tmuxMonitorBell ?? "unknown"), tmux_bell_action=\(status.tmuxBellAction ?? "unknown"), bash_auto_notify_configured=\(status.bashAutoNotifyConfigured == true), bash_auto_notify_runtime_probe=\(status.bashAutoNotifyRuntimeProbe == true), service_active=\(serviceActiveText)"
             }
             throw APIError.serverError("Host-agent notifications are not ready (\(details)).")
         }
@@ -440,6 +522,68 @@ final class HostAgentInstaller {
 
     private func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+    }
+
+    private func hostAgentCommand(_ args: String) -> String {
+        let script = """
+        set -eu
+        export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+        if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "$XDG_RUNTIME_DIR/bus" ]; then
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+        fi
+        "$HOME/.local/bin/host-agent" \(args)
+        """
+        return "/bin/sh -lc \(shellQuote(script))"
+    }
+
+    private func requireHostAgentReleaseTag() throws -> String {
+        let value = runtimeConfig.hostAgentReleaseTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !value.contains("$(") else {
+            throw APIError.serverError(
+                "Host-agent release tag is not configured. Set Info.plist HostAgentReleaseTag to a concrete release tag (for example v1.0.14)."
+            )
+        }
+        guard value.first == "v" else {
+            throw APIError.serverError(
+                "Host-agent release tag must start with 'v' (current: \(value))."
+            )
+        }
+        return value
+    }
+
+    private func requiredHostAgentStatusSchemaVersion() throws -> Int {
+        let value = runtimeConfig.requiredStatusSchemaVersion
+        guard value > 0 else {
+            throw APIError.serverError(
+                "Host-agent status schema requirement is not configured. Set Info.plist HostAgentRequiredStatusSchemaVersion to a positive integer."
+            )
+        }
+        return value
+    }
+
+    private func assertStatusCompatibility(_ status: HostAgentStatusResponse) throws {
+        let requiredSchema = try requiredHostAgentStatusSchemaVersion()
+        let releaseTag = try requireHostAgentReleaseTag()
+        let remoteVersion = status.version ?? "unknown"
+        let remoteSchema = status.statusSchemaVersion.map { String($0) } ?? "unknown"
+
+        guard status.daemon == "host-agent" else {
+            throw APIError.serverError(
+                "Host-agent status is incompatible (daemon=\(status.daemon ?? "unknown"), version=\(remoteVersion), required_schema=\(requiredSchema), release_tag=\(releaseTag))."
+            )
+        }
+
+        guard let schema = status.statusSchemaVersion, schema >= requiredSchema else {
+            throw APIError.serverError(
+                "Host-agent status schema is incompatible (remote_schema=\(remoteSchema), required_schema=\(requiredSchema), version=\(remoteVersion), release_tag=\(releaseTag))."
+            )
+        }
+
+        guard status.features?.bashAutoNotifyRuntimeProbe == true else {
+            throw APIError.serverError(
+                "Host-agent is missing required feature bash_auto_notify_runtime_probe (schema=\(remoteSchema), version=\(remoteVersion), release_tag=\(releaseTag))."
+            )
+        }
     }
 
     private func decodeJSONFromOutput<T: Decodable>(_ output: String, as type: T.Type) throws -> T {

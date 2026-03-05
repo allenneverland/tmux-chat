@@ -13,6 +13,7 @@ struct ServerDetailView: View {
 
     @State private var serverName: String = ""
     @State private var showDeleteConfirmation = false
+    @State private var showRepairOnboarding = false
 
     var body: some View {
         Form {
@@ -34,6 +35,14 @@ struct ServerDetailView: View {
                 }
             }
 
+            Section("Maintenance") {
+                Button {
+                    showRepairOnboarding = true
+                } label: {
+                    Label("Update & Re-pair Server", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+
             Section {
                 Button(role: .destructive) {
                     showDeleteConfirmation = true
@@ -44,6 +53,12 @@ struct ServerDetailView: View {
                         Spacer()
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $showRepairOnboarding) {
+            SSHOnboardingView(serverToRepair: server) {
+                NotificationCenter.default.post(name: .authenticationRestored, object: nil)
+                dismiss()
             }
         }
         .confirmationDialog("Delete Server", isPresented: $showDeleteConfirmation) {
@@ -71,7 +86,9 @@ struct ServerDetailView: View {
     }
 
     private func saveChanges() {
-        var updatedServer = server
+        guard var updatedServer = configManager.servers.first(where: { $0.id == server.id }) else {
+            return
+        }
         updatedServer.serverName = serverName
         configManager.updateServer(updatedServer)
     }

@@ -167,6 +167,16 @@ git tag v1.0.6
 git push origin v1.0.6
 ```
 
+### 8.2.1 同步更新 iOS 固定 host-agent 版本（必要）
+
+iOS onboarding 會固定下載 `HostAgentReleaseTag` 指定的 host-agent，不再使用 `latest`。
+每次發 host-agent 新版時，必須同步更新：
+
+- `ios/TmuxChat/Info.plist` 的 `HostAgentReleaseTag`（例如 `v1.0.14`）
+- `ios/TmuxChat/Info.plist` 的 `HostAgentRequiredStatusSchemaVersion`（目前為 `2`）
+
+若 host-agent `status --json` 契約有破壞性調整，先提升 `status_schema_version`，再更新 iOS 的 required schema，最後才發佈 App。
+
 ### 8.3 Workflow 自動做的事
 
 `.github/workflows/release.yml` 會：

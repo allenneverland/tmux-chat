@@ -19,6 +19,8 @@ use paths::AgentPaths;
 use serde::Serialize;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+const STATUS_SCHEMA_VERSION: u32 = 2;
+
 #[derive(Parser, Debug)]
 #[command(name = "host-agent")]
 #[command(version)]
@@ -87,7 +89,16 @@ struct PairOutput {
 }
 
 #[derive(Debug, Serialize)]
+struct StatusFeatures {
+    bash_auto_notify_runtime_probe: bool,
+}
+
+#[derive(Debug, Serialize)]
 struct StatusOutput {
+    daemon: String,
+    version: String,
+    status_schema_version: u32,
+    features: StatusFeatures,
     paired: bool,
     host_id: Option<String>,
     host_name: Option<String>,
@@ -108,6 +119,10 @@ struct StatusOutput {
     bashrc_path: String,
     bash_auto_notify_script_path: String,
     bash_auto_notify_configured: bool,
+    bash_startup_files_configured: Vec<String>,
+    bash_auto_notify_runtime_probe: Option<bool>,
+    bash_runtime_probe_detail: Option<String>,
+    bash_binary_path: Option<String>,
     notification_ready: bool,
     readiness_errors: Vec<String>,
     service_manager: String,
@@ -291,6 +306,17 @@ async fn run_status(json: bool) -> Result<()> {
     let tmux_monitor_bell = tmux::monitor_bell_value();
     let tmux_bell_action = tmux::bell_action_value();
     let bash_auto_notify_configured = shell_notify::is_bash_auto_notify_configured(&paths)?;
+    let bash_startup_files_configured = shell_notify::configured_bash_startup_files(&paths)?
+        .into_iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    let bash_probe = shell_notify::bash_runtime_probe(&paths);
+    let bash_auto_notify_runtime_probe = bash_probe.success;
+    let bash_runtime_probe_detail = Some(bash_probe.detail.clone());
+    let bash_binary_path = bash_probe
+        .bash_binary_path
+        .as_ref()
+        .map(|p| p.display().to_string());
     let socket_exists = paths.socket_path.exists();
     let socket_connectable = if socket_exists {
         daemon::is_socket_connectable(&paths.socket_path).await
@@ -320,6 +346,14 @@ async fn run_status(json: bool) -> Result<()> {
         Some(other) => readiness_errors.push(format!("tmux_bell_action_not_any:{other}")),
         None => readiness_errors.push("tmux_bell_action_unknown".to_string()),
     }
+    if !bash_auto_notify_configured {
+        readiness_errors.push("bash_auto_notify_not_configured".to_string());
+    }
+    match bash_auto_notify_runtime_probe {
+        Some(true) => {}
+        Some(false) => readiness_errors.push("bash_auto_notify_runtime_probe_failed".to_string()),
+        None => readiness_errors.push("bash_auto_notify_runtime_probe_unavailable".to_string()),
+    }
     match service_status.manager {
         service::ServiceManager::Unsupported => {}
         _ => {
@@ -331,6 +365,12 @@ async fn run_status(json: bool) -> Result<()> {
     let notification_ready = readiness_errors.is_empty();
 
     let output = StatusOutput {
+        daemon: "host-agent".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        status_schema_version: STATUS_SCHEMA_VERSION,
+        features: StatusFeatures {
+            bash_auto_notify_runtime_probe: true,
+        },
         paired: config.is_some(),
         host_id: config.as_ref().map(|c| c.host_id.clone()),
         host_name: config.as_ref().map(|c| c.host_name.clone()),
@@ -354,6 +394,10 @@ async fn run_status(json: bool) -> Result<()> {
         bashrc_path: paths.bashrc_path.display().to_string(),
         bash_auto_notify_script_path: paths.bash_auto_notify_script_path.display().to_string(),
         bash_auto_notify_configured,
+        bash_startup_files_configured,
+        bash_auto_notify_runtime_probe,
+        bash_runtime_probe_detail,
+        bash_binary_path,
         notification_ready,
         readiness_errors,
         service_manager: service_status.manager.as_str().to_string(),
@@ -369,6 +413,14 @@ async fn run_status(json: bool) -> Result<()> {
         print_json(&output)?;
     } else {
         println!("host-agent status");
+        println!(
+            "  identity: daemon={}, version={}, status_schema_version={}",
+            output.daemon, output.version, output.status_schema_version
+        );
+        println!(
+            "  features: bash_auto_notify_runtime_probe={}",
+            output.features.bash_auto_notify_runtime_probe
+        );
         println!("  paired: {}", output.paired);
         if let Some(host_id) = &output.host_id {
             println!("  host_id: {}", host_id);
@@ -389,11 +441,20 @@ async fn run_status(json: bool) -> Result<()> {
             output.tmux_monitor_bell, output.tmux_bell_action
         );
         println!(
-            "  bash_auto_notify: configured={}, bashrc={}, script={}",
+            "  bash_auto_notify: configured={}, runtime_probe={:?}, probe_detail={:?}, bash_binary_path={:?}, bashrc={}, script={}",
             output.bash_auto_notify_configured,
+            output.bash_auto_notify_runtime_probe,
+            output.bash_runtime_probe_detail,
+            output.bash_binary_path,
             output.bashrc_path,
             output.bash_auto_notify_script_path
         );
+        if !output.bash_startup_files_configured.is_empty() {
+            println!(
+                "  bash_startup_files_configured: {}",
+                output.bash_startup_files_configured.join(", ")
+            );
+        }
         println!(
             "  service: manager={}, installed={}, active={}",
             output.service_manager,
@@ -420,13 +481,42 @@ async fn run_emit_bell(pane_target: Option<String>) -> Result<()> {
 
 fn run_install_shell_notify(min_seconds: u64) -> Result<()> {
     let paths = AgentPaths::resolve()?;
+    let bash_binary = shell_notify::detect_bash_binary().map_err(|reason| {
+        anyhow::anyhow!(
+            "bash runtime is unavailable ({reason}); install bash and ensure it is executable from non-interactive SSH sessions"
+        )
+    })?;
     let binary_path = std::env::current_exe().context("failed to resolve current executable path")?;
     let result = shell_notify::install_bash_auto_notify(&paths, &binary_path, min_seconds)?;
+    let probe = shell_notify::bash_runtime_probe(&paths);
+    if probe.success != Some(true) {
+        let bash_path = probe
+            .bash_binary_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        anyhow::bail!(
+            "bash auto-notify runtime probe failed after install (detail={}, bash_binary_path={})",
+            probe.detail,
+            bash_path
+        );
+    }
+
     println!("bash auto-notify install complete");
     println!("  min_seconds: {}", min_seconds.max(1));
     println!("  bashrc: {}", result.bashrc_path.display());
+    println!("  login_startup: {}", result.login_startup_path.display());
     println!("  script: {}", result.script_path.display());
-    println!("  bashrc_updated: {}", result.bashrc_updated);
+    println!("  bash_binary_path: {}", bash_binary.display());
+    if !result.startup_files_updated.is_empty() {
+        let rendered = result
+            .startup_files_updated
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("  startup_files_updated: {}", rendered);
+    }
     Ok(())
 }
 
@@ -436,7 +526,15 @@ fn run_uninstall_shell_notify() -> Result<()> {
     println!("bash auto-notify uninstall complete");
     println!("  bashrc: {}", result.bashrc_path.display());
     println!("  script: {}", result.script_path.display());
-    println!("  bashrc_updated: {}", result.bashrc_updated);
+    if !result.startup_files_updated.is_empty() {
+        let rendered = result
+            .startup_files_updated
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("  startup_files_updated: {}", rendered);
+    }
     println!("  script_removed: {}", result.script_removed);
     Ok(())
 }

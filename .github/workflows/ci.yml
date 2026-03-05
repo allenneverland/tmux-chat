@@ -10,6 +10,24 @@ permissions:
   contents: read
 
 jobs:
+  config-guard:
+    name: Config Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure host-agent release is pinned
+        run: |
+          if grep -n "releases/latest/download/.*host-agent" ios/TmuxChat/Services/HostAgentInstaller.swift; then
+            echo "HostAgentInstaller must not use releases/latest for host-agent."
+            exit 1
+          fi
+          grep -n "<key>HostAgentReleaseTag</key>" ios/TmuxChat/Info.plist
+          grep -n "<key>HostAgentRequiredStatusSchemaVersion</key>" ios/TmuxChat/Info.plist
+
   rust-core:
     name: Rust Core
     runs-on: ubuntu-latest

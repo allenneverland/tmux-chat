@@ -23,6 +23,28 @@ struct SSHOnboardingView: View {
     var serverToRepair: ServerConfig? = nil
     var onCompleted: (() -> Void)?
 
+    private var isRepairMode: Bool {
+        serverToRepair != nil
+    }
+
+    private var titleText: String {
+        isRepairMode ? "Update Server" : "Add Server"
+    }
+
+    private var submitButtonText: String {
+        if coordinator.isRunning {
+            return coordinator.stepLabel
+        }
+        return isRepairMode ? "Update and Reconnect" : "Connect and Install"
+    }
+
+    private var footerText: String {
+        if isRepairMode {
+            return "TmuxChat reconnects over SSH, updates host-agent and shell auto-notify, re-pairs notifications, and validates readiness."
+        }
+        return "TmuxChat connects over SSH, installs host-agent, configures Bash auto-notify for long-running commands, pairs notifications, and saves credentials. Use the same SSH user that owns your tmux sessions."
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -77,16 +99,16 @@ struct SSHOnboardingView: View {
                             if coordinator.isRunning {
                                 ProgressView()
                             }
-                            Text(coordinator.isRunning ? coordinator.stepLabel : "Connect and Install")
+                            Text(submitButtonText)
                         }
                         .frame(maxWidth: .infinity)
                     }
                     .disabled(coordinator.isRunning)
                 } footer: {
-                    Text("TmuxChat connects over SSH, installs host-agent, configures Bash auto-notify for long-running commands, pairs notifications, and saves credentials. Use the same SSH user that owns your tmux sessions.")
+                    Text(footerText)
                 }
             }
-            .navigationTitle("Add Server")
+            .navigationTitle(titleText)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
