@@ -28,6 +28,7 @@ enum SSHOnboardingStep: String {
     case startingTmuxChatd
     case detectingPlatform
     case installingHostAgent
+    case installingShellNotify
     case issuingControlToken
     case startingPairing
     case pairingHostAgent
@@ -81,6 +82,8 @@ final class SSHOnboardingCoordinator {
             return "Detecting host platform"
         case .installingHostAgent:
             return "Installing host-agent"
+        case .installingShellNotify:
+            return "Configuring Bash auto-notify"
         case .issuingControlToken:
             return "Issuing control token"
         case .startingPairing:
@@ -146,6 +149,9 @@ final class SSHOnboardingCoordinator {
                 pushServerBaseURL: pushServerURL,
                 releaseAssetName: platform.releaseAssetName
             )
+
+            step = .installingShellNotify
+            try await installer.installBashAutoNotify(on: connectionSpec, minSeconds: 3)
 
             step = .issuingControlToken
             let issued = try await issueDeviceCredentials(

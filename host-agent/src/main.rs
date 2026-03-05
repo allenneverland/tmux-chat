@@ -2,6 +2,7 @@ mod config;
 mod daemon;
 mod pairing;
 mod paths;
+mod shell_notify;
 mod service;
 mod tmux;
 
@@ -55,6 +56,16 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Install Bash command-finish auto-notify hook
+    #[command(name = "install-shell-notify")]
+    InstallShellNotify {
+        /// Notify only when command runtime reaches this threshold (seconds)
+        #[arg(long, default_value_t = 3)]
+        min_seconds: u64,
+    },
+    /// Remove Bash command-finish auto-notify hook
+    #[command(name = "uninstall-shell-notify")]
+    UninstallShellNotify,
     /// Internal: send a bell event to local daemon socket
     #[command(name = "emit-bell", hide = true)]
     EmitBell {
@@ -94,6 +105,9 @@ struct StatusOutput {
     tmux_hook_active: bool,
     tmux_monitor_bell: Option<String>,
     tmux_bell_action: Option<String>,
+    bashrc_path: String,
+    bash_auto_notify_script_path: String,
+    bash_auto_notify_configured: bool,
     notification_ready: bool,
     readiness_errors: Vec<String>,
     service_manager: String,
@@ -131,6 +145,8 @@ async fn run() -> Result<()> {
         } => run_pair(token, push_server_base_url, json).await,
         Commands::Run => run_daemon().await,
         Commands::Status { json } => run_status(json).await,
+        Commands::InstallShellNotify { min_seconds } => run_install_shell_notify(min_seconds),
+        Commands::UninstallShellNotify => run_uninstall_shell_notify(),
         Commands::EmitBell { pane_target } => run_emit_bell(pane_target).await,
     }
 }
@@ -274,6 +290,7 @@ async fn run_status(json: bool) -> Result<()> {
     let tmux_hook_active = tmux::is_live_hook_active();
     let tmux_monitor_bell = tmux::monitor_bell_value();
     let tmux_bell_action = tmux::bell_action_value();
+    let bash_auto_notify_configured = shell_notify::is_bash_auto_notify_configured(&paths)?;
     let socket_exists = paths.socket_path.exists();
     let socket_connectable = if socket_exists {
         daemon::is_socket_connectable(&paths.socket_path).await
@@ -334,6 +351,9 @@ async fn run_status(json: bool) -> Result<()> {
         tmux_hook_active,
         tmux_monitor_bell,
         tmux_bell_action,
+        bashrc_path: paths.bashrc_path.display().to_string(),
+        bash_auto_notify_script_path: paths.bash_auto_notify_script_path.display().to_string(),
+        bash_auto_notify_configured,
         notification_ready,
         readiness_errors,
         service_manager: service_status.manager.as_str().to_string(),
@@ -369,6 +389,12 @@ async fn run_status(json: bool) -> Result<()> {
             output.tmux_monitor_bell, output.tmux_bell_action
         );
         println!(
+            "  bash_auto_notify: configured={}, bashrc={}, script={}",
+            output.bash_auto_notify_configured,
+            output.bashrc_path,
+            output.bash_auto_notify_script_path
+        );
+        println!(
             "  service: manager={}, installed={}, active={}",
             output.service_manager,
             output.service_installed,
@@ -389,6 +415,29 @@ async fn run_status(json: bool) -> Result<()> {
 async fn run_emit_bell(pane_target: Option<String>) -> Result<()> {
     let paths = AgentPaths::resolve()?;
     let _ = daemon::emit(&paths, pane_target).await?;
+    Ok(())
+}
+
+fn run_install_shell_notify(min_seconds: u64) -> Result<()> {
+    let paths = AgentPaths::resolve()?;
+    let binary_path = std::env::current_exe().context("failed to resolve current executable path")?;
+    let result = shell_notify::install_bash_auto_notify(&paths, &binary_path, min_seconds)?;
+    println!("bash auto-notify install complete");
+    println!("  min_seconds: {}", min_seconds.max(1));
+    println!("  bashrc: {}", result.bashrc_path.display());
+    println!("  script: {}", result.script_path.display());
+    println!("  bashrc_updated: {}", result.bashrc_updated);
+    Ok(())
+}
+
+fn run_uninstall_shell_notify() -> Result<()> {
+    let paths = AgentPaths::resolve()?;
+    let result = shell_notify::uninstall_bash_auto_notify(&paths)?;
+    println!("bash auto-notify uninstall complete");
+    println!("  bashrc: {}", result.bashrc_path.display());
+    println!("  script: {}", result.script_path.display());
+    println!("  bashrc_updated: {}", result.bashrc_updated);
+    println!("  script_removed: {}", result.script_removed);
     Ok(())
 }
 

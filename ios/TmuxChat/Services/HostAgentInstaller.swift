@@ -37,6 +37,7 @@ final class HostAgentInstaller {
         let tmuxHookActive: Bool?
         let tmuxMonitorBell: String?
         let tmuxBellAction: String?
+        let bashAutoNotifyConfigured: Bool?
         let serviceActive: Bool?
 
         enum CodingKeys: String, CodingKey {
@@ -47,6 +48,7 @@ final class HostAgentInstaller {
             case tmuxHookActive = "tmux_hook_active"
             case tmuxMonitorBell = "tmux_monitor_bell"
             case tmuxBellAction = "tmux_bell_action"
+            case bashAutoNotifyConfigured = "bash_auto_notify_configured"
             case serviceActive = "service_active"
         }
     }
@@ -159,6 +161,12 @@ final class HostAgentInstaller {
         return result.stdout
     }
 
+    func installBashAutoNotify(on connection: SSHConnectionSpec, minSeconds: Int = 3) async throws {
+        let threshold = max(1, minSeconds)
+        let command = "\"$HOME/.local/bin/host-agent\" install-shell-notify --min-seconds \(threshold)"
+        _ = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(command))", on: connection)
+    }
+
     func verifyHostAgentReadiness(on connection: SSHConnectionSpec) async throws {
         let command = "\"$HOME/.local/bin/host-agent\" status --json"
         let result = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(command))", on: connection)
@@ -169,6 +177,7 @@ final class HostAgentInstaller {
             && (status.tmuxHookActive == true)
             && (status.tmuxMonitorBell == "on")
             && (status.tmuxBellAction == "any")
+            && (status.bashAutoNotifyConfigured ?? true)
             && (status.serviceActive == true)
         let ready = status.notificationReady ?? inferredReady
         guard ready else {
@@ -178,7 +187,7 @@ final class HostAgentInstaller {
             } else {
                 let serviceActiveText = status.serviceActive.map { $0 ? "true" : "false" } ?? "unknown"
                 details =
-                    "paired=\(status.paired == true), socket_connectable=\(status.socketConnectable == true), tmux_hook_active=\(status.tmuxHookActive == true), tmux_monitor_bell=\(status.tmuxMonitorBell ?? "unknown"), tmux_bell_action=\(status.tmuxBellAction ?? "unknown"), service_active=\(serviceActiveText)"
+                    "paired=\(status.paired == true), socket_connectable=\(status.socketConnectable == true), tmux_hook_active=\(status.tmuxHookActive == true), tmux_monitor_bell=\(status.tmuxMonitorBell ?? "unknown"), tmux_bell_action=\(status.tmuxBellAction ?? "unknown"), bash_auto_notify_configured=\(status.bashAutoNotifyConfigured == true), service_active=\(serviceActiveText)"
             }
             throw APIError.serverError("Host-agent notifications are not ready (\(details)).")
         }

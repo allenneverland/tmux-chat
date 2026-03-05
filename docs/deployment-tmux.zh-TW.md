@@ -23,6 +23,7 @@ SSH onboarding 會自動：
 
 - 檢查 `tmux-chatd` 是否存在
 - 遠端安裝 `host-agent`
+- 設定 Bash 命令完成通知（預設門檻 3 秒）
 - 執行 push pairing 與 APNs 註冊
 - 發放控制憑證並驗證 tmux API
 
@@ -75,6 +76,7 @@ Environment=PUSH_SERVER_COMPAT_NOTIFY_TOKEN=CHANGE_ME_STRONG_TOKEN
 cargo build --release -p host-agent
 install -m 755 ./target/release/host-agent ~/.local/bin/host-agent
 ~/.local/bin/host-agent install --push-server-base-url https://push.example.com
+~/.local/bin/host-agent install-shell-notify --min-seconds 3
 ~/.local/bin/host-agent pair --token '<pairing_token>' --push-server-base-url 'https://push.example.com' --json
 ~/.local/bin/host-agent status --json
 ```
@@ -93,15 +95,17 @@ bell 通知路徑：
 
 ```bash
 ~/.local/bin/host-agent status --json
-sleep 3 && printf '\a'
+sleep 4 && true
 ```
 
 先確認 `host-agent status --json` 內：
 
 - `notification_ready` 為 `true`
+- `bash_auto_notify_configured` 為 `true`
 - `readiness_errors` 為空陣列
 
 `push-server` metrics 的 `events_bell_total` 應增加。
+說明：`printf '\a'` 可能只觸發終端鈴聲，不一定會觸發 tmux `alert-bell` hook。
 
 ## 6. 常見錯誤
 

@@ -83,7 +83,7 @@ struct SSHOnboardingView: View {
                     }
                     .disabled(coordinator.isRunning)
                 } footer: {
-                    Text("TmuxChat connects over SSH, installs host-agent, pairs notifications, and saves credentials. Use the same SSH user that owns your tmux sessions.")
+                    Text("TmuxChat connects over SSH, installs host-agent, configures Bash auto-notify for long-running commands, pairs notifications, and saves credentials. Use the same SSH user that owns your tmux sessions.")
                 }
             }
             .navigationTitle("Add Server")

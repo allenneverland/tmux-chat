@@ -115,6 +115,7 @@ App 會自動：
 
 - 驗證 SSH 連線
 - 遠端安裝 `host-agent`
+- 設定 Bash 命令完成通知（`host-agent install-shell-notify --min-seconds 3`）
 - 發放控制憑證（在主機執行 `tmux-chatd devices issue --json`）
 - 執行 push pairing 與 APNs 註冊
 - 儲存伺服器設定並驗證 tmux API
@@ -123,9 +124,11 @@ App 會自動：
 
 ```bash
 ~/.local/bin/host-agent status --json
+sleep 4 && true
 ```
 
-請確認 `notification_ready` 為 `true`，且 `readiness_errors` 為空陣列。
+請確認 `notification_ready` 為 `true`、`bash_auto_notify_configured` 為 `true`，且 `readiness_errors` 為空陣列。
+驗證時請使用長任務（例如 `sleep 4 && true`）。`printf '\a'` 可能只觸發終端鈴聲，不一定會觸發 tmux `alert-bell` hook。
 
 ### 5. 可選：安裝 coding-agent 通知 hooks
 

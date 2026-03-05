@@ -10,6 +10,8 @@ pub struct AgentPaths {
     pub settings_path: PathBuf,
     pub socket_path: PathBuf,
     pub tmux_conf_path: PathBuf,
+    pub bashrc_path: PathBuf,
+    pub bash_auto_notify_script_path: PathBuf,
     pub launchd_plist_path: PathBuf,
     pub launchd_log_dir: PathBuf,
     pub systemd_service_path: PathBuf,
@@ -31,6 +33,12 @@ impl AgentPaths {
         let settings_path = data_dir.join("settings.json");
         let socket_path = runtime_dir.join("bell.sock");
         let tmux_conf_path = home.join(".tmux.conf");
+        let bashrc_path = home.join(".bashrc");
+        let bash_auto_notify_script_path = home
+            .join(".local")
+            .join("lib")
+            .join("tmux-chat")
+            .join("bash-auto-notify.sh");
         let launchd_plist_path = home
             .join("Library")
             .join("LaunchAgents")
@@ -49,6 +57,8 @@ impl AgentPaths {
             settings_path,
             socket_path,
             tmux_conf_path,
+            bashrc_path,
+            bash_auto_notify_script_path,
             launchd_plist_path,
             launchd_log_dir,
             systemd_service_path,
