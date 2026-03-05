@@ -37,8 +37,7 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
-pub async fn list_sessions()
-    -> Result<Json<Vec<SessionResponse>>, (StatusCode, Json<ErrorResponse>)>
+pub async fn list_sessions() -> Result<Json<Vec<SessionResponse>>, (StatusCode, Json<ErrorResponse>)>
 {
     match tmux::list_sessions() {
         Ok(sessions) => {
