@@ -119,6 +119,14 @@ The app will:
 - run push pairing and APNs registration
 - save server configuration and verify tmux API
 
+After onboarding, verify notification readiness on the host:
+
+```bash
+~/.local/bin/host-agent status --json
+```
+
+Ensure `notification_ready` is `true` and `readiness_errors` is empty.
+
 ### 5. Optional: coding-agent notification hooks
 
 Auto install:

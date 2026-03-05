@@ -119,6 +119,14 @@ App 會自動：
 - 執行 push pairing 與 APNs 註冊
 - 儲存伺服器設定並驗證 tmux API
 
+完成後可在主機確認通知就緒：
+
+```bash
+~/.local/bin/host-agent status --json
+```
+
+請確認 `notification_ready` 為 `true`，且 `readiness_errors` 為空陣列。
+
 ### 5. 可選：安裝 coding-agent 通知 hooks
 
 自動安裝：

@@ -5,6 +5,8 @@ mod paths;
 mod service;
 mod tmux;
 
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
@@ -90,6 +92,10 @@ struct StatusOutput {
     tmux_conf_path: String,
     tmux_hook_configured: bool,
     tmux_hook_active: bool,
+    tmux_monitor_bell: Option<String>,
+    tmux_bell_action: Option<String>,
+    notification_ready: bool,
+    readiness_errors: Vec<String>,
     service_manager: String,
     service_unit_path: Option<String>,
     service_installed: bool,
@@ -148,15 +154,30 @@ async fn run_install(push_server_base_url: Option<String>) -> Result<()> {
         println!("Saved push-server base URL: {}", normalized);
     }
 
-    let service_result = service::install_and_start(&paths, &binary_path)?;
+    let service_result = service::install(&paths, &binary_path)?;
+    let paired_config = load_agent_config(&paths.config_path)?;
+    let mut socket_ready = false;
+    if paired_config.is_some() {
+        service::start_or_restart(&paths).context("failed to start host-agent service after install")?;
+        socket_ready =
+            daemon::wait_for_socket_connectable(&paths.socket_path, Duration::from_secs(10)).await;
+        if !socket_ready {
+            anyhow::bail!(
+                "host-agent service did not become ready after install; check service logs and rerun `host-agent status --json`"
+            );
+        }
+    }
+
     println!("host-agent install complete");
     println!("  tmux config: {}", paths.tmux_conf_path.display());
     println!("  service manager: {}", service_result.manager.as_str());
     if let Some(unit_path) = &service_result.unit_path {
         println!("  service unit: {}", unit_path.display());
     }
-    if let Some(err) = service_result.start_error {
-        eprintln!("  warning: failed to start service automatically: {}", err);
+    if paired_config.is_some() {
+        println!("  service socket ready: {}", socket_ready);
+    } else {
+        println!("  service start deferred until pairing completes");
     }
 
     Ok(())
@@ -204,6 +225,15 @@ async fn run_pair(token: String, push_server_base_url: Option<String>, json: boo
     updated_settings.push_server_base_url = Some(base_url.clone());
     save_settings(&paths.settings_path, &updated_settings)?;
 
+    service::start_or_restart(&paths).context("failed to start host-agent service after pairing")?;
+    let socket_ready =
+        daemon::wait_for_socket_connectable(&paths.socket_path, Duration::from_secs(10)).await;
+    if !socket_ready {
+        anyhow::bail!(
+            "host-agent service did not become ready after pairing; check service logs and rerun `host-agent status --json`"
+        );
+    }
+
     let output = PairOutput {
         paired: true,
         host_id: response.host_id,
@@ -242,12 +272,46 @@ async fn run_status(json: bool) -> Result<()> {
     let service_status = service::inspect(&paths);
     let tmux_hook_configured = tmux::is_hook_configured(&paths.tmux_conf_path)?;
     let tmux_hook_active = tmux::is_live_hook_active();
+    let tmux_monitor_bell = tmux::monitor_bell_value();
+    let tmux_bell_action = tmux::bell_action_value();
     let socket_exists = paths.socket_path.exists();
     let socket_connectable = if socket_exists {
         daemon::is_socket_connectable(&paths.socket_path).await
     } else {
         false
     };
+    let mut readiness_errors = Vec::new();
+    if config.is_none() {
+        readiness_errors.push("not_paired".to_string());
+    }
+    if !socket_exists {
+        readiness_errors.push("daemon_socket_missing".to_string());
+    }
+    if !socket_connectable {
+        readiness_errors.push("daemon_socket_unreachable".to_string());
+    }
+    if !tmux_hook_active {
+        readiness_errors.push("tmux_alert_bell_hook_inactive".to_string());
+    }
+    match tmux_monitor_bell.as_deref() {
+        Some("on") => {}
+        Some(other) => readiness_errors.push(format!("tmux_monitor_bell_not_on:{other}")),
+        None => readiness_errors.push("tmux_monitor_bell_unknown".to_string()),
+    }
+    match tmux_bell_action.as_deref() {
+        Some("any") => {}
+        Some(other) => readiness_errors.push(format!("tmux_bell_action_not_any:{other}")),
+        None => readiness_errors.push("tmux_bell_action_unknown".to_string()),
+    }
+    match service_status.manager {
+        service::ServiceManager::Unsupported => {}
+        _ => {
+            if service_status.active != Some(true) {
+                readiness_errors.push("service_not_active".to_string());
+            }
+        }
+    }
+    let notification_ready = readiness_errors.is_empty();
 
     let output = StatusOutput {
         paired: config.is_some(),
@@ -268,6 +332,10 @@ async fn run_status(json: bool) -> Result<()> {
         tmux_conf_path: paths.tmux_conf_path.display().to_string(),
         tmux_hook_configured,
         tmux_hook_active,
+        tmux_monitor_bell,
+        tmux_bell_action,
+        notification_ready,
+        readiness_errors,
         service_manager: service_status.manager.as_str().to_string(),
         service_unit_path: service_status
             .unit_path
@@ -297,6 +365,10 @@ async fn run_status(json: bool) -> Result<()> {
             output.tmux_hook_configured, output.tmux_hook_active
         );
         println!(
+            "  tmux_bell_options: monitor_bell={:?}, bell_action={:?}",
+            output.tmux_monitor_bell, output.tmux_bell_action
+        );
+        println!(
             "  service: manager={}, installed={}, active={}",
             output.service_manager,
             output.service_installed,
@@ -305,6 +377,10 @@ async fn run_status(json: bool) -> Result<()> {
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "unknown".to_string())
         );
+        println!("  notification_ready: {}", output.notification_ready);
+        if !output.readiness_errors.is_empty() {
+            println!("  readiness_errors: {}", output.readiness_errors.join(", "));
+        }
     }
 
     Ok(())

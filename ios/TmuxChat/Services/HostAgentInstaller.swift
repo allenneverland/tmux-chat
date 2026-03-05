@@ -28,6 +28,29 @@ struct HostAgentPlatform: Equatable {
 final class HostAgentInstaller {
     private let sshExecutor: SSHCommandExecuting
 
+    private struct HostAgentStatusResponse: Decodable {
+        let notificationReady: Bool?
+        let readinessErrors: [String]?
+
+        let paired: Bool?
+        let socketConnectable: Bool?
+        let tmuxHookActive: Bool?
+        let tmuxMonitorBell: String?
+        let tmuxBellAction: String?
+        let serviceActive: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case notificationReady = "notification_ready"
+            case readinessErrors = "readiness_errors"
+            case paired
+            case socketConnectable = "socket_connectable"
+            case tmuxHookActive = "tmux_hook_active"
+            case tmuxMonitorBell = "tmux_monitor_bell"
+            case tmuxBellAction = "tmux_bell_action"
+            case serviceActive = "service_active"
+        }
+    }
+
     init(sshExecutor: SSHCommandExecuting) {
         self.sshExecutor = sshExecutor
     }
@@ -136,6 +159,31 @@ final class HostAgentInstaller {
         return result.stdout
     }
 
+    func verifyHostAgentReadiness(on connection: SSHConnectionSpec) async throws {
+        let command = "\"$HOME/.local/bin/host-agent\" status --json"
+        let result = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(command))", on: connection)
+        let status = try decodeJSONFromOutput(result.stdout, as: HostAgentStatusResponse.self)
+
+        let inferredReady = (status.paired == true)
+            && (status.socketConnectable == true)
+            && (status.tmuxHookActive == true)
+            && (status.tmuxMonitorBell == "on")
+            && (status.tmuxBellAction == "any")
+            && (status.serviceActive == true)
+        let ready = status.notificationReady ?? inferredReady
+        guard ready else {
+            let details: String
+            if let errors = status.readinessErrors, !errors.isEmpty {
+                details = errors.joined(separator: ", ")
+            } else {
+                let serviceActiveText = status.serviceActive.map { $0 ? "true" : "false" } ?? "unknown"
+                details =
+                    "paired=\(status.paired == true), socket_connectable=\(status.socketConnectable == true), tmux_hook_active=\(status.tmuxHookActive == true), tmux_monitor_bell=\(status.tmuxMonitorBell ?? "unknown"), tmux_bell_action=\(status.tmuxBellAction ?? "unknown"), service_active=\(serviceActiveText)"
+            }
+            throw APIError.serverError("Host-agent notifications are not ready (\(details)).")
+        }
+    }
+
     func ensureTmuxChatdRunning(
         on connection: SSHConnectionSpec,
         executable: String,
@@ -227,8 +275,13 @@ final class HostAgentInstaller {
         fi
 
         if [ "$USE_SYSTEMD" -eq 0 ]; then
-          if command -v pgrep >/dev/null 2>&1 && pgrep -f 'tmux-chatd' >/dev/null 2>&1; then
-            pkill -f 'tmux-chatd' || true
+          if command -v pgrep >/dev/null 2>&1; then
+            PIDS="$(pgrep -x tmux-chatd || true)"
+          else
+            PIDS=""
+          fi
+          if [ -n "$PIDS" ]; then
+            kill $PIDS || true
             sleep 1
           fi
           nohup "$BIN" > "$LOG_DIR/tmux-chatd.log" 2>&1 &
@@ -378,5 +431,25 @@ final class HostAgentInstaller {
 
     private func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+    }
+
+    private func decodeJSONFromOutput<T: Decodable>(_ output: String, as type: T.Type) throws -> T {
+        if let directData = output.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+           let value = try? JSONDecoder().decode(type, from: directData) {
+            return value
+        }
+
+        for line in output.split(whereSeparator: \.isNewline) {
+            let trimmed = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            guard let data = trimmed.data(using: .utf8) else { continue }
+            if let decoded = try? JSONDecoder().decode(type, from: data) {
+                return decoded
+            }
+        }
+
+        throw APIError.decodingError(NSError(domain: "SSHOutput", code: 0, userInfo: [
+            NSLocalizedDescriptionKey: "Unable to parse JSON from remote command output"
+        ]))
     }
 }

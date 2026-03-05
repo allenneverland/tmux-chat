@@ -63,6 +63,14 @@ pub fn is_live_hook_active() -> bool {
     }
 }
 
+pub fn monitor_bell_value() -> Option<String> {
+    query_tmux_value(&["show-window-options", "-gv", "monitor-bell"])
+}
+
+pub fn bell_action_value() -> Option<String> {
+    query_tmux_value(&["show-options", "-gv", "bell-action"])
+}
+
 pub fn render_managed_block(binary_path: &Path) -> String {
     let hook_line = render_hook_line(binary_path);
     format!(
@@ -145,6 +153,20 @@ fn shell_quote(raw: &str) -> String {
     }
     quoted.push('\'');
     quoted
+}
+
+fn query_tmux_value(args: &[&str]) -> Option<String> {
+    let output = Command::new("tmux").args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 #[cfg(test)]

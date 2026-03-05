@@ -31,6 +31,7 @@ enum SSHOnboardingStep: String {
     case issuingControlToken
     case startingPairing
     case pairingHostAgent
+    case verifyingHostAgentNotifications
     case registeringDevice
     case savingConfiguration
     case verifyingControlPlane
@@ -86,6 +87,8 @@ final class SSHOnboardingCoordinator {
             return "Starting push pairing"
         case .pairingHostAgent:
             return "Pairing host-agent"
+        case .verifyingHostAgentNotifications:
+            return "Verifying host-agent notifications"
         case .registeringDevice:
             return "Registering APNs device"
         case .savingConfiguration:
@@ -163,6 +166,9 @@ final class SSHOnboardingCoordinator {
                 pairingToken: pairing.pairingToken,
                 pushServerBaseURL: pushServerURL
             )
+
+            step = .verifyingHostAgentNotifications
+            try await installer.verifyHostAgentReadiness(on: connectionSpec)
 
             step = .registeringDevice
             let registration = try await api.registerAPNsDevice(

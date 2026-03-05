@@ -31,7 +31,6 @@ impl ServiceManager {
 pub struct ServiceInstallResult {
     pub manager: ServiceManager,
     pub unit_path: Option<PathBuf>,
-    pub start_error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,15 +41,24 @@ pub struct ServiceStatus {
     pub active: Option<bool>,
 }
 
-pub fn install_and_start(paths: &AgentPaths, binary_path: &Path) -> Result<ServiceInstallResult> {
+pub fn install(paths: &AgentPaths, binary_path: &Path) -> Result<ServiceInstallResult> {
     match manager_for_current_platform() {
         ServiceManager::LaunchdUser => install_launchd(paths, binary_path),
         ServiceManager::SystemdUser => install_systemd(paths, binary_path),
         ServiceManager::Unsupported => Ok(ServiceInstallResult {
             manager: ServiceManager::Unsupported,
             unit_path: None,
-            start_error: Some("unsupported platform for user service install".to_string()),
         }),
+    }
+}
+
+pub fn start_or_restart(paths: &AgentPaths) -> Result<()> {
+    match manager_for_current_platform() {
+        ServiceManager::LaunchdUser => start_or_restart_launchd(paths),
+        ServiceManager::SystemdUser => start_or_restart_systemd(paths),
+        ServiceManager::Unsupported => {
+            anyhow::bail!("unsupported platform for host-agent service management")
+        }
     }
 }
 
@@ -92,19 +100,9 @@ fn install_launchd(paths: &AgentPaths, binary_path: &Path) -> Result<ServiceInst
     let plist = launchd_plist(binary_path, &stdout_log, &stderr_log);
     write_text_file(plist_path, &plist, 0o644)?;
 
-    let _ = Command::new("launchctl").arg("unload").arg(plist_path).output();
-    let start_error = match Command::new("launchctl").arg("load").arg(plist_path).output() {
-        Ok(out) if out.status.success() => None,
-        Ok(out) => Some(stderr_or_stdout(&out)),
-        Err(e) => Some(format!("failed to execute launchctl load: {}", e)),
-    };
-
-    let _ = Command::new("launchctl").arg("start").arg(LAUNCHD_LABEL).output();
-
     Ok(ServiceInstallResult {
         manager: ServiceManager::LaunchdUser,
         unit_path: Some(plist_path.clone()),
-        start_error,
     })
 }
 
@@ -113,21 +111,73 @@ fn install_systemd(paths: &AgentPaths, binary_path: &Path) -> Result<ServiceInst
     let service = systemd_unit(binary_path);
     write_text_file(service_path, &service, 0o644)?;
 
-    let mut start_error = None;
-    if let Err(e) = run_command_ok("systemctl", &["--user", "daemon-reload"]) {
-        start_error = Some(format!("systemctl daemon-reload failed: {}", e));
-    } else if let Err(e) = run_command_ok(
-        "systemctl",
-        &["--user", "enable", "--now", SYSTEMD_UNIT_NAME],
-    ) {
-        start_error = Some(format!("systemctl enable --now failed: {}", e));
-    }
+    run_command_ok("systemctl", &["--user", "daemon-reload"])?;
 
     Ok(ServiceInstallResult {
         manager: ServiceManager::SystemdUser,
         unit_path: Some(service_path.clone()),
-        start_error,
     })
+}
+
+fn start_or_restart_launchd(paths: &AgentPaths) -> Result<()> {
+    if !paths.launchd_plist_path.exists() {
+        anyhow::bail!(
+            "launchd plist is missing at {}; run `host-agent install` first",
+            paths.launchd_plist_path.display()
+        );
+    }
+
+    let _ = Command::new("launchctl")
+        .arg("unload")
+        .arg(&paths.launchd_plist_path)
+        .output();
+
+    let load_output = Command::new("launchctl")
+        .arg("load")
+        .arg(&paths.launchd_plist_path)
+        .output()
+        .context("failed to execute launchctl load")?;
+    if !load_output.status.success() {
+        anyhow::bail!("launchctl load failed: {}", stderr_or_stdout(&load_output));
+    }
+
+    let _ = Command::new("launchctl")
+        .arg("start")
+        .arg(LAUNCHD_LABEL)
+        .output();
+
+    let status = inspect_launchd(paths);
+    if status.active != Some(true) {
+        anyhow::bail!("launchd service is not active after reload");
+    }
+    Ok(())
+}
+
+fn start_or_restart_systemd(paths: &AgentPaths) -> Result<()> {
+    if !paths.systemd_service_path.exists() {
+        anyhow::bail!(
+            "systemd unit is missing at {}; run `host-agent install` first",
+            paths.systemd_service_path.display()
+        );
+    }
+
+    run_command_ok("systemctl", &["--user", "daemon-reload"])?;
+    run_command_ok(
+        "systemctl",
+        &["--user", "enable", "--now", SYSTEMD_UNIT_NAME],
+    )?;
+    run_command_ok("systemctl", &["--user", "restart", SYSTEMD_UNIT_NAME])?;
+
+    let active_output = Command::new("systemctl")
+        .args(["--user", "is-active", SYSTEMD_UNIT_NAME])
+        .output()
+        .context("failed to execute systemctl --user is-active")?;
+    let active_value = String::from_utf8_lossy(&active_output.stdout).trim().to_string();
+    if !active_output.status.success() || active_value != "active" {
+        anyhow::bail!("systemd service is not active: {}", stderr_or_stdout(&active_output));
+    }
+
+    Ok(())
 }
 
 fn inspect_launchd(paths: &AgentPaths) -> ServiceStatus {

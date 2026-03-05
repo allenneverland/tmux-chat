@@ -92,9 +92,14 @@ curl -i -H "Authorization: Bearer <device_token>" http://127.0.0.1:8787/sessions
 bell 通知路徑：
 
 ```bash
-printf '\a'
 ~/.local/bin/host-agent status --json
+sleep 3 && printf '\a'
 ```
+
+先確認 `host-agent status --json` 內：
+
+- `notification_ready` 為 `true`
+- `readiness_errors` 為空陣列
 
 `push-server` metrics 的 `events_bell_total` 應增加。
 
@@ -104,6 +109,9 @@ printf '\a'
   - 先在主機安裝 `tmux-chatd` 再重試
 - `host-agent pair` 失敗
   - pairing token 可能過期（預設 TTL 600 秒）
+- `host-agent status --json` 顯示 `notification_ready=false`
+  - 先看 `readiness_errors` 欄位
+  - Linux 常見是 `service_not_active`，用 `systemctl --user status tmux-chat-host-agent.service --no-pager -n 50` 排查
 - `/notify` 502
   - `PUSH_SERVER_BASE_URL` 或 `PUSH_SERVER_COMPAT_NOTIFY_TOKEN` 設定錯誤
 

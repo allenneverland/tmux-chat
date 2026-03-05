@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
+    time::{sleep, Instant},
 };
 
 use crate::{
@@ -97,6 +98,17 @@ pub async fn emit(paths: &AgentPaths, pane_target: Option<String>) -> Result<boo
 
 pub async fn is_socket_connectable(socket_path: &Path) -> bool {
     UnixStream::connect(socket_path).await.is_ok()
+}
+
+pub async fn wait_for_socket_connectable(socket_path: &Path, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if is_socket_connectable(socket_path).await {
+            return true;
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+    false
 }
 
 async fn handle_connection(
