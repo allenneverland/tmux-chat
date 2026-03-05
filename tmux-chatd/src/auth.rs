@@ -70,6 +70,13 @@ impl AuthService {
         Ok(())
     }
 
+    async fn force_reload_from_disk(&self) -> Result<(), std::io::Error> {
+        let (latest_store, confirmed_stamp) = load_store_and_stamp(&self.data_path)?;
+        *self.store.write().await = latest_store;
+        *self.store_stamp.write().await = confirmed_stamp;
+        Ok(())
+    }
+
     pub async fn issue_device(&self, device_name: &str) -> Device {
         let device = Device {
             id: uuid::Uuid::new_v4().to_string(),
@@ -90,6 +97,16 @@ impl AuthService {
 
     pub async fn validate_device_token(&self, token: &str) -> Option<Device> {
         let _ = self.refresh_from_disk_if_changed().await;
+        if let Some(found) = {
+            let store = self.store.read().await;
+            store.devices.iter().find(|d| d.token == token).cloned()
+        } {
+            return Some(found);
+        }
+
+        // Fallback: force a hard reload in case filesystem timestamp granularity
+        // prevented change detection for back-to-back writes.
+        let _ = self.force_reload_from_disk().await;
         let store = self.store.read().await;
         store.devices.iter().find(|d| d.token == token).cloned()
     }

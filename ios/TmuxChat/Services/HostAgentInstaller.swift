@@ -33,14 +33,23 @@ final class HostAgentInstaller {
     }
 
     func ensureTmuxChatdInstalled(on connection: SSHConnectionSpec) async throws -> String {
+        let existing = try await detectTmuxChatdExecutable(on: connection)
+
+        do {
+            try await installTmuxChatd(on: connection)
+        } catch {
+            if let existing {
+                return existing
+            }
+            throw error
+        }
+
         if let executable = try await detectTmuxChatdExecutable(on: connection) {
             return executable
         }
 
-        try await installTmuxChatd(on: connection)
-
-        if let executable = try await detectTmuxChatdExecutable(on: connection) {
-            return executable
+        if let existing {
+            return existing
         }
 
         throw HostAgentInstallerError.missingTmuxChatd
@@ -247,10 +256,10 @@ final class HostAgentInstaller {
 
     private func detectTmuxChatdExecutable(on connection: SSHConnectionSpec) async throws -> String? {
         let script = """
-        if command -v tmux-chatd >/dev/null 2>&1; then
-          command -v tmux-chatd
-        elif [ -x "$HOME/.local/bin/tmux-chatd" ]; then
+        if [ -x "$HOME/.local/bin/tmux-chatd" ]; then
           echo "$HOME/.local/bin/tmux-chatd"
+        elif command -v tmux-chatd >/dev/null 2>&1; then
+          command -v tmux-chatd
         fi
         exit 0
         """
