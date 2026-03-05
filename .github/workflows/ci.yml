@@ -95,10 +95,27 @@ jobs:
     name: iOS Build
     runs-on: macos-latest
     timeout-minutes: 30
+    env:
+      DERIVED_DATA_PATH: ${{ runner.temp }}/DerivedData
+      SOURCE_PACKAGES_PATH: ${{ runner.temp }}/SourcePackages
+      XCODEBUILD_LOG_PATH: ${{ runner.temp }}/xcodebuild.log
+      XCRESULT_PATH: ${{ runner.temp }}/TmuxChat.xcresult
+      XCRESULT_SUMMARY_PATH: ${{ runner.temp }}/xcresult-summary.json
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.4"
+
+      - name: Show Xcode and SDK info
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -showsdks
 
       - name: Prepare Config.xcconfig
         run: |
@@ -109,14 +126,83 @@ jobs:
               > ios/TmuxChat/Config.xcconfig
           fi
 
+      - name: Resolve Swift packages
+        run: |
+          set -euo pipefail
+          mkdir -p "$SOURCE_PACKAGES_PATH"
+          xcodebuild \
+            -project ios/TmuxChat.xcodeproj \
+            -scheme TmuxChat \
+            -resolvePackageDependencies \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_PATH"
+
       - name: Build iOS app
         run: |
+          set -euo pipefail
+          rm -rf "$XCRESULT_PATH"
           xcodebuild \
             -project ios/TmuxChat.xcodeproj \
             -scheme TmuxChat \
             -configuration Debug \
             -destination 'generic/platform=iOS' \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_PATH" \
+            -disableAutomaticPackageResolution \
+            -resultBundlePath "$XCRESULT_PATH" \
+            -jobs 2 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build
+            build | tee "$XCODEBUILD_LOG_PATH"
+
+      - name: Extract first iOS build error
+        if: failure()
+        run: |
+          set -euo pipefail
+          if [ -f "$XCODEBUILD_LOG_PATH" ]; then
+            echo "=== First error context from xcodebuild log ==="
+            awk '
+              BEGIN { found = 0; start = 0; stop = 0 }
+              {
+                lines[NR] = $0
+                if (found == 0 && ($0 ~ /(^|[^A-Za-z])error:/ || $0 ~ /fatal error:/ || $0 ~ /Command SwiftCompile failed/ || $0 ~ /Command CompileSwift failed/)) {
+                  found = 1
+                  start = NR - 10
+                  if (start < 1) start = 1
+                  stop = NR + 30
+                }
+              }
+              END {
+                if (found == 1) {
+                  for (i = start; i <= stop && i <= NR; i++) print lines[i]
+                } else {
+                  print "No explicit error line found in xcodebuild.log."
+                  if (NR > 200) {
+                    for (i = NR - 199; i <= NR; i++) print lines[i]
+                  } else {
+                    for (i = 1; i <= NR; i++) print lines[i]
+                  }
+                }
+              }
+            ' "$XCODEBUILD_LOG_PATH"
+          else
+            echo "xcodebuild log not found: $XCODEBUILD_LOG_PATH"
+          fi
+
+      - name: Extract xcresult summary
+        if: failure()
+        run: |
+          set -euo pipefail
+          if [ -d "$XCRESULT_PATH" ]; then
+            xcrun xcresulttool get --legacy --format json --path "$XCRESULT_PATH" > "$XCRESULT_SUMMARY_PATH" || true
+          fi
+
+      - name: Upload iOS build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-diagnostics
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/xcodebuild.log
+            ${{ runner.temp }}/TmuxChat.xcresult
+            ${{ runner.temp }}/xcresult-summary.json
