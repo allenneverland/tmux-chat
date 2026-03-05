@@ -42,6 +42,13 @@ make push-server-env-init
 make push-server-deploy
 ```
 
+預設會將容器只綁在本機 `127.0.0.1:8790`（避免與 `tailscale serve --https=8790` 衝突）。  
+若你要對外直接開放主機埠，請顯式覆寫：
+
+```bash
+PUSH_SERVER_HOST_PORT=8790 make push-server-deploy
+```
+
 資料目錄預設（rootless）：
 
 - `~/.local/share/tmux-chat/push-server`

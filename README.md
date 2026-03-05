@@ -231,6 +231,14 @@ make push-server-deploy
 make push-server-status
 ```
 
+By default the container binds to `127.0.0.1:8790` (to avoid conflicts with
+`tailscale serve --https=8790`). To publish directly on the host interface,
+override it explicitly:
+
+```bash
+PUSH_SERVER_HOST_PORT=8790 make push-server-deploy
+```
+
 `ops/deploy/push-server.env` is gitignored and keeps APNs secrets out of command history.
 
 Default host data dir is rootless:

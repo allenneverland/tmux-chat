@@ -14,7 +14,7 @@ PUSH_SERVER_ENV_FILE ?= ops/deploy/push-server.env
 # Optional: explicitly pin host data dir for push-server container.
 # If empty, ops/deploy/push-server-deploy.sh resolves a safe default.
 PUSH_SERVER_HOST_DATA_DIR ?=
-PUSH_SERVER_HOST_PORT ?= 8790
+PUSH_SERVER_HOST_PORT ?= 127.0.0.1:8790
 PUSH_SERVER_CONTAINER_PORT ?= 8790
 
 # Push-server forwarding configuration (override in config.local.mk)
@@ -137,7 +137,7 @@ push-server-docker-image:
 
 # Run push-server runtime container
 push-server-docker-run: push-server-docker-image
-	$(DOCKER) run --rm -p 8790:8790 $(PUSH_SERVER_IMAGE)
+	$(DOCKER) run --rm -p 127.0.0.1:8790:8790 $(PUSH_SERVER_IMAGE)
 
 # Initialize local push-server env file from sample (contains APNs placeholders).
 push-server-env-init:

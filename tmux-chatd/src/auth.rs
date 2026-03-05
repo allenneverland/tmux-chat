@@ -1,8 +1,10 @@
 use chrono::{DateTime, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +23,14 @@ pub struct AuthStore {
 
 pub struct AuthService {
     store: RwLock<AuthStore>,
+    store_stamp: RwLock<StoreStamp>,
     data_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct StoreStamp {
+    modified: Option<SystemTime>,
+    len: u64,
 }
 
 impl AuthService {
@@ -29,15 +38,11 @@ impl AuthService {
         std::fs::create_dir_all(&data_dir)?;
         let data_path = data_dir.join("auth.json");
 
-        let store = if data_path.exists() {
-            let content = std::fs::read_to_string(&data_path)?;
-            serde_json::from_str(&content).unwrap_or_default()
-        } else {
-            AuthStore::default()
-        };
+        let (store, store_stamp) = load_store_and_stamp(&data_path)?;
 
         Ok(Self {
             store: RwLock::new(store),
+            store_stamp: RwLock::new(store_stamp),
             data_path,
         })
     }
@@ -46,6 +51,22 @@ impl AuthService {
         let store = self.store.read().await;
         let content = serde_json::to_string_pretty(&*store)?;
         std::fs::write(&self.data_path, content)?;
+        let stamp = file_stamp(&self.data_path);
+        *self.store_stamp.write().await = stamp;
+        Ok(())
+    }
+
+    async fn refresh_from_disk_if_changed(&self) -> Result<(), std::io::Error> {
+        let latest_stamp = file_stamp(&self.data_path);
+        let current_stamp = *self.store_stamp.read().await;
+
+        if latest_stamp == current_stamp {
+            return Ok(());
+        }
+
+        let (latest_store, confirmed_stamp) = load_store_and_stamp(&self.data_path)?;
+        *self.store.write().await = latest_store;
+        *self.store_stamp.write().await = confirmed_stamp;
         Ok(())
     }
 
@@ -68,6 +89,7 @@ impl AuthService {
     }
 
     pub async fn validate_device_token(&self, token: &str) -> Option<Device> {
+        let _ = self.refresh_from_disk_if_changed().await;
         let store = self.store.read().await;
         store.devices.iter().find(|d| d.token == token).cloned()
     }
@@ -83,6 +105,7 @@ impl AuthService {
     }
 
     pub async fn list_devices(&self) -> Vec<Device> {
+        let _ = self.refresh_from_disk_if_changed().await;
         let store = self.store.read().await;
         store.devices.clone()
     }
@@ -102,8 +125,29 @@ impl AuthService {
     }
 
     pub async fn has_devices(&self) -> bool {
+        let _ = self.refresh_from_disk_if_changed().await;
         let store = self.store.read().await;
         !store.devices.is_empty()
+    }
+}
+
+fn load_store_and_stamp(path: &Path) -> Result<(AuthStore, StoreStamp), std::io::Error> {
+    if !path.exists() {
+        return Ok((AuthStore::default(), StoreStamp::default()));
+    }
+
+    let content = std::fs::read_to_string(path)?;
+    let store = serde_json::from_str(&content).unwrap_or_default();
+    Ok((store, file_stamp(path)))
+}
+
+fn file_stamp(path: &Path) -> StoreStamp {
+    match std::fs::metadata(path) {
+        Ok(meta) => StoreStamp {
+            modified: meta.modified().ok(),
+            len: meta.len(),
+        },
+        Err(_) => StoreStamp::default(),
     }
 }
 
@@ -154,6 +198,21 @@ mod tests {
 
         assert!(auth.revoke_device(&device.id).await);
         assert!(auth.validate_device_token(&device.token).await.is_none());
+
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn daemon_view_reflects_external_issue_and_revoke() {
+        let data_dir = unique_test_data_dir();
+        let daemon = AuthService::new(data_dir.clone()).await.unwrap();
+        let cli = AuthService::new(data_dir.clone()).await.unwrap();
+
+        let issued = cli.issue_device("iPhone").await;
+        assert!(daemon.validate_device_token(&issued.token).await.is_some());
+
+        assert!(cli.revoke_device(&issued.id).await);
+        assert!(daemon.validate_device_token(&issued.token).await.is_none());
 
         let _ = std::fs::remove_dir_all(data_dir);
     }

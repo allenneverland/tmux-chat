@@ -231,6 +231,13 @@ make push-server-deploy
 make push-server-status
 ```
 
+預設會將容器綁在 `127.0.0.1:8790`（避免和 `tailscale serve --https=8790` 衝突）。
+若要對外直接綁主機埠，請顯式覆寫：
+
+```bash
+PUSH_SERVER_HOST_PORT=8790 make push-server-deploy
+```
+
 `ops/deploy/push-server.env` 已加入 `.gitignore`，可避免 APNs 金鑰出現在指令歷史。
 
 預設資料目錄為 rootless：
