@@ -226,8 +226,9 @@ final class SSHOnboardingCoordinator {
             step = .completed
             return true
         } catch {
+            let failedAt = stepLabel
             step = .failed
-            errorMessage = error.localizedDescription
+            errorMessage = "[\(failedAt)] \(error.localizedDescription)"
             return false
         }
     }

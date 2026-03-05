@@ -197,39 +197,41 @@ final class HostAgentInstaller {
           exit 1
         fi
 
-        if ! check_ready; then
-          if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
-            mkdir -p "$HOME/.config/systemd/user"
-            {
-              echo "[Unit]"
-              echo "Description=tmux-chatd"
-              echo "After=network-online.target"
-              echo "Wants=network-online.target"
-              echo
-              echo "[Service]"
-              echo "Type=simple"
-              echo "ExecStart=$BIN"
-              echo "Restart=always"
-              echo "RestartSec=2"
-              echo "Environment=TMUX_CHATD_BIND_ADDR=127.0.0.1"
-              echo "Environment=TMUX_CHATD_PORT=8787"
-              echo "Environment=TMUX_CHATD_DATA_DIR=$HOME/.local/share/tmux-chatd"
-              echo "Environment=PUSH_SERVER_BASE_URL=$PUSH_URL"
-              echo
-              echo "[Install]"
-              echo "WantedBy=default.target"
-            } > "$HOME/.config/systemd/user/tmux-chatd.service"
-            systemctl --user daemon-reload || true
-            systemctl --user enable --now tmux-chatd.service || true
-          fi
+        USE_SYSTEMD=0
+        if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+          USE_SYSTEMD=1
+          mkdir -p "$HOME/.config/systemd/user"
+          {
+            echo "[Unit]"
+            echo "Description=tmux-chatd"
+            echo "After=network-online.target"
+            echo "Wants=network-online.target"
+            echo
+            echo "[Service]"
+            echo "Type=simple"
+            echo "ExecStart=$BIN"
+            echo "Restart=always"
+            echo "RestartSec=2"
+            echo "Environment=TMUX_CHATD_BIND_ADDR=127.0.0.1"
+            echo "Environment=TMUX_CHATD_PORT=8787"
+            echo "Environment=TMUX_CHATD_DATA_DIR=$HOME/.local/share/tmux-chatd"
+            echo "Environment=PUSH_SERVER_BASE_URL=$PUSH_URL"
+            echo
+            echo "[Install]"
+            echo "WantedBy=default.target"
+          } > "$HOME/.config/systemd/user/tmux-chatd.service"
+          systemctl --user daemon-reload || true
+          # Always restart so onboarding picks the newest binary/version.
+          systemctl --user enable --now tmux-chatd.service || true
+          systemctl --user restart tmux-chatd.service || true
         fi
 
-        if ! check_ready; then
-          if command -v pgrep >/dev/null 2>&1 && pgrep -f "$BIN" >/dev/null 2>&1; then
-            :
-          else
-            nohup "$BIN" > "$LOG_DIR/tmux-chatd.log" 2>&1 &
+        if [ "$USE_SYSTEMD" -eq 0 ]; then
+          if command -v pgrep >/dev/null 2>&1 && pgrep -f 'tmux-chatd' >/dev/null 2>&1; then
+            pkill -f 'tmux-chatd' || true
+            sleep 1
           fi
+          nohup "$BIN" > "$LOG_DIR/tmux-chatd.log" 2>&1 &
         fi
 
         OWNER="$(listener_owner || true)"

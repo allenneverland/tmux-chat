@@ -329,6 +329,9 @@ class TmuxChatAPI {
             case 200...299:
                 return data
             case 401, 403:
+                if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    throw APIError.serverError(errorResponse.error)
+                }
                 throw APIError.unauthorized(.deviceTokenInvalid)
             default:
                 if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
