@@ -80,16 +80,26 @@ jobs:
 
       - name: Run container smoke test
         run: |
-          docker run -d --rm --name push-server-ci -p 127.0.0.1:8790:8790 tmux-chat-push-server:ci
+          docker run -d --rm --name push-server-ci \
+            -p 127.0.0.1:8790:8790 \
+            -e PUSH_SERVER_BIND_ADDR=0.0.0.0 \
+            -e PUSH_SERVER_PORT=8790 \
+            tmux-chat-push-server:ci
           trap "docker stop push-server-ci" EXIT
+          healthy=0
           for i in $(seq 1 15); do
             if curl -fsS http://127.0.0.1:8790/healthz >/dev/null; then
-              exit 0
+              healthy=1
+              break
             fi
             sleep 1
           done
-          echo "push-server health check failed"
-          exit 1
+          if [ "$healthy" -ne 1 ]; then
+            echo "push-server health check failed"
+            docker ps -a --filter "name=^/push-server-ci$" || true
+            docker logs push-server-ci || true
+            exit 1
+          fi
 
   ios-build:
     name: iOS Build

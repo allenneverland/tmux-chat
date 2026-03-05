@@ -13,6 +13,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /workspace/target/release/push-server /usr/local/bin/push-server
+ENV PUSH_SERVER_BIND_ADDR=0.0.0.0
+ENV PUSH_SERVER_PORT=8790
 EXPOSE 8790
 ENTRYPOINT ["push-server"]
-
