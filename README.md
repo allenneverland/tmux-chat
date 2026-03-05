@@ -168,8 +168,10 @@ Then add the server in app using:
 ### Requirements
 
 - [Rust](https://rustup.rs/)
-- Xcode (for iOS)
+- Xcode 26.3+ (for iOS)
 - Apple Developer account (for APNs testing)
+
+CI pins iOS builds to Xcode 26.3. Keep local development on the same major version to avoid SDK/API mismatch.
 
 ### Build
 

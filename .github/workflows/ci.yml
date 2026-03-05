@@ -123,13 +123,27 @@ jobs:
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "16.4"
+          xcode-version: "26.3"
 
       - name: Show Xcode and SDK info
         run: |
           set -euo pipefail
+          xcode_version="$(xcodebuild -version | awk 'NR==1 {print $2}')"
+          echo "Xcode version: ${xcode_version}"
           xcodebuild -version
-          xcodebuild -showsdks
+          sdk_list="$(xcodebuild -showsdks)"
+          echo "$sdk_list"
+          case "$xcode_version" in
+            26.*) ;;
+            *)
+              echo "::error::Expected Xcode 26.x in CI, found ${xcode_version}."
+              exit 1
+              ;;
+          esac
+          if ! echo "$sdk_list" | grep -q "iphoneos26"; then
+            echo "::error::Expected iPhoneOS 26 SDK in CI output."
+            exit 1
+          fi
 
       - name: Prepare Config.xcconfig
         run: |
@@ -208,6 +222,43 @@ jobs:
           set -euo pipefail
           if [ -d "$XCRESULT_PATH" ]; then
             xcrun xcresulttool get --legacy --format json --path "$XCRESULT_PATH" > "$XCRESULT_SUMMARY_PATH" || true
+          fi
+
+      - name: Extract first xcresult issue
+        if: failure()
+        run: |
+          set -euo pipefail
+          if [ ! -f "$XCRESULT_SUMMARY_PATH" ]; then
+            echo "xcresult summary not found: $XCRESULT_SUMMARY_PATH"
+            exit 0
+          fi
+          first_issue="$(
+            jq -r '
+              ([
+                .. | objects
+                | {
+                    type: (.issueType // .issueType._value // ._type._name // ""),
+                    message: (.message // .message._value // ""),
+                    location: (
+                      .documentLocationInCreatingWorkspace.url
+                      // .documentLocationInCreatingWorkspace.url._value
+                      // ""
+                    )
+                  }
+                | select((.message | type) == "string" and (.message | length) > 0)
+              ][0] // null) as $issue
+              | if $issue == null then
+                  empty
+                else
+                  "type=\($issue.type)\nmessage=\($issue.message)\nlocation=\($issue.location)"
+                end
+            ' "$XCRESULT_SUMMARY_PATH" 2>/dev/null || true
+          )"
+          if [ -n "$first_issue" ]; then
+            echo "=== First issue from xcresult ==="
+            printf '%s\n' "$first_issue"
+          else
+            echo "No parseable issue found in xcresult summary."
           fi
 
       - name: Upload iOS build diagnostics

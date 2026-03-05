@@ -168,8 +168,10 @@ tmux-chatd devices issue --name "<device-name>" --json
 ### 需求
 
 - [Rust](https://rustup.rs/)
-- Xcode（iOS 開發）
+- Xcode 26.3+（iOS 開發）
 - Apple Developer 帳號（APNs 測試）
+
+CI 的 iOS build 固定使用 Xcode 26.3。建議本機也維持同一個 major 版本，避免 SDK/API 不相容。
 
 ### Build
 
