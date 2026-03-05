@@ -42,7 +42,7 @@ impl Database {
             std::fs::create_dir_all(parent)?;
         }
 
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
 
@@ -90,7 +90,7 @@ impl Database {
                 device_id TEXT NOT NULL,
                 device_name TEXT NOT NULL,
                 server_name TEXT NOT NULL,
-                apns_token TEXT NOT NULL UNIQUE,
+                apns_token TEXT NOT NULL,
                 sandbox INTEGER NOT NULL,
                 device_api_token_id TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -101,6 +101,9 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_devices_pairing_id ON devices(pairing_id);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_device_id_active
                 ON devices(device_id)
+                WHERE revoked_at IS NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_apns_token_active
+                ON devices(apns_token)
                 WHERE revoked_at IS NULL;
 
             CREATE TABLE IF NOT EXISTS mutes (
@@ -121,6 +124,7 @@ impl Database {
             );
             "#,
         )?;
+        migrate_devices_apns_uniqueness(&mut conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -1022,34 +1026,91 @@ fn revoke_conflicting_apns_token(
     keep_id: Option<&str>,
     now: DateTime<Utc>,
 ) -> AppResult<()> {
-    let conflict = tx
+    let now_ts = now.to_rfc3339();
+
+    tx.execute(
+        "UPDATE tokens
+         SET revoked_at = ?1
+         WHERE id IN (
+            SELECT device_api_token_id
+            FROM devices
+            WHERE apns_token = ?2
+              AND revoked_at IS NULL
+              AND (?3 IS NULL OR id <> ?3)
+         )",
+        params![now_ts, apns_token, keep_id],
+    )?;
+    tx.execute(
+        "UPDATE devices
+         SET revoked_at = ?1, updated_at = ?1
+         WHERE apns_token = ?2
+           AND revoked_at IS NULL
+           AND (?3 IS NULL OR id <> ?3)",
+        params![now.to_rfc3339(), apns_token, keep_id],
+    )?;
+
+    Ok(())
+}
+
+fn migrate_devices_apns_uniqueness(conn: &mut Connection) -> AppResult<()> {
+    let devices_sql = conn
         .query_row(
-            "SELECT id, device_api_token_id
-             FROM devices
-             WHERE apns_token = ?1 AND revoked_at IS NULL
-             LIMIT 1",
-            params![apns_token],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'devices'",
+            [],
+            |row| row.get::<_, String>(0),
         )
         .optional()?;
 
-    if let Some((conflict_id, conflict_token_id)) = conflict {
-        if keep_id
-            .map(|id| id == conflict_id.as_str())
-            .unwrap_or(false)
-        {
-            return Ok(());
-        }
+    let Some(devices_sql) = devices_sql else {
+        return Ok(());
+    };
 
-        tx.execute(
-            "UPDATE tokens SET revoked_at = ?1 WHERE id = ?2",
-            params![now.to_rfc3339(), conflict_token_id],
-        )?;
-        tx.execute(
-            "UPDATE devices SET revoked_at = ?1, updated_at = ?1 WHERE id = ?2",
-            params![now.to_rfc3339(), conflict_id],
-        )?;
+    if !devices_sql.contains("apns_token TEXT NOT NULL UNIQUE") {
+        return Ok(());
     }
+
+    let tx = conn.transaction()?;
+    tx.execute_batch(
+        r#"
+        ALTER TABLE devices RENAME TO devices_old;
+
+        CREATE TABLE devices (
+            id TEXT PRIMARY KEY,
+            pairing_id TEXT,
+            host_id TEXT,
+            device_id TEXT NOT NULL,
+            device_name TEXT NOT NULL,
+            server_name TEXT NOT NULL,
+            apns_token TEXT NOT NULL,
+            sandbox INTEGER NOT NULL,
+            device_api_token_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            revoked_at TEXT
+        );
+
+        INSERT INTO devices (
+            id, pairing_id, host_id, device_id, device_name, server_name,
+            apns_token, sandbox, device_api_token_id, created_at, updated_at, revoked_at
+        )
+        SELECT
+            id, pairing_id, host_id, device_id, device_name, server_name,
+            apns_token, sandbox, device_api_token_id, created_at, updated_at, revoked_at
+        FROM devices_old;
+
+        DROP TABLE devices_old;
+
+        CREATE INDEX IF NOT EXISTS idx_devices_host_id ON devices(host_id);
+        CREATE INDEX IF NOT EXISTS idx_devices_pairing_id ON devices(pairing_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_device_id_active
+            ON devices(device_id)
+            WHERE revoked_at IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_apns_token_active
+            ON devices(apns_token)
+            WHERE revoked_at IS NULL;
+        "#,
+    )?;
+    tx.commit()?;
 
     Ok(())
 }
@@ -1227,5 +1288,176 @@ mod tests {
                 && rule.source == MuteSource::Bell
                 && rule.until.is_some()
         }));
+    }
+
+    #[test]
+    fn register_device_rebinds_apns_token_between_devices() {
+        let db = setup_database();
+        let first_device = bootstrap_device(&db, "device-1", "shared-apns-token");
+
+        let start = db
+            .start_pairing(
+                StartPairingRequest {
+                    device_id: "device-2".to_string(),
+                    device_name: "device-2-name".to_string(),
+                    server_name: "server".to_string(),
+                },
+                600,
+            )
+            .expect("start pairing should succeed");
+
+        db.complete_pairing(
+            CompletePairingRequest {
+                pairing_token: start.pairing_token.clone(),
+                host_name: "host-b".to_string(),
+                platform: "linux".to_string(),
+            },
+            "https://push.example.com/v1/events/bell",
+        )
+        .expect("complete pairing should succeed");
+
+        let second = db
+            .register_device(
+                &start.device_register_token,
+                RegisterDeviceRequest {
+                    token: "shared-apns-token".to_string(),
+                    sandbox: false,
+                    device_id: "device-2".to_string(),
+                    server_name: "server".to_string(),
+                },
+            )
+            .expect("second register should succeed");
+
+        let second_device = db
+            .validate_token(
+                &second.device_api_token,
+                &[Database::token_scope_device_api()],
+            )
+            .expect("second device token should be valid");
+
+        let conn = lock_conn(&db.conn).expect("connection lock");
+
+        let first_revoked_at: Option<String> = conn
+            .query_row(
+                "SELECT revoked_at FROM devices WHERE id = ?1",
+                params![first_device.subject_id.as_str()],
+                |row| row.get(0),
+            )
+            .expect("first device should exist");
+        assert!(first_revoked_at.is_some());
+
+        let active_with_shared_token: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM devices
+                 WHERE apns_token = ?1 AND revoked_at IS NULL",
+                params!["shared-apns-token"],
+                |row| row.get(0),
+            )
+            .expect("count query should succeed");
+        assert_eq!(active_with_shared_token, 1);
+
+        let active_device_id: String = conn
+            .query_row(
+                "SELECT device_id FROM devices
+                 WHERE id = ?1 AND revoked_at IS NULL",
+                params![second_device.subject_id.as_str()],
+                |row| row.get(0),
+            )
+            .expect("second device should remain active");
+        assert_eq!(active_device_id, "device-2");
+    }
+
+    #[test]
+    fn new_migrates_legacy_devices_apns_unique_constraint() {
+        let path = std::env::temp_dir().join(format!("push-server-legacy-{}.sqlite3", Uuid::new_v4()));
+        let legacy = Connection::open(&path).expect("legacy database should open");
+        legacy
+            .execute_batch(
+                r#"
+                CREATE TABLE devices (
+                    id TEXT PRIMARY KEY,
+                    pairing_id TEXT,
+                    host_id TEXT,
+                    device_id TEXT NOT NULL,
+                    device_name TEXT NOT NULL,
+                    server_name TEXT NOT NULL,
+                    apns_token TEXT NOT NULL UNIQUE,
+                    sandbox INTEGER NOT NULL,
+                    device_api_token_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    revoked_at TEXT
+                );
+                "#,
+            )
+            .expect("legacy schema should initialize");
+
+        let now = Utc::now().to_rfc3339();
+        legacy
+            .execute(
+                "INSERT INTO devices (
+                    id, pairing_id, host_id, device_id, device_name, server_name,
+                    apns_token, sandbox, device_api_token_id, created_at, updated_at, revoked_at
+                ) VALUES (?1, NULL, NULL, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, NULL)",
+                params![
+                    "legacy-device",
+                    "legacy-id",
+                    "legacy-name",
+                    "legacy-server",
+                    "shared-apns-token",
+                    bool_to_int(false),
+                    "legacy-token-id",
+                    now,
+                ],
+            )
+            .expect("legacy row should insert");
+        drop(legacy);
+
+        let db = Database::new(&path).expect("database should migrate");
+        let conn = lock_conn(&db.conn).expect("connection lock");
+
+        let table_sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'devices'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("devices table sql should exist");
+        assert!(!table_sql.contains("apns_token TEXT NOT NULL UNIQUE"));
+
+        let partial_index_exists: Option<String> = conn
+            .query_row(
+                "SELECT name FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_devices_apns_token_active'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .expect("index query should succeed");
+        assert!(partial_index_exists.is_some());
+
+        let revoke_ts = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE devices SET revoked_at = ?1, updated_at = ?1 WHERE id = ?2",
+            params![revoke_ts, "legacy-device"],
+        )
+        .expect("legacy row should revoke");
+        conn.execute(
+            "INSERT INTO devices (
+                id, pairing_id, host_id, device_id, device_name, server_name,
+                apns_token, sandbox, device_api_token_id, created_at, updated_at, revoked_at
+            ) VALUES (?1, NULL, NULL, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, NULL)",
+            params![
+                "new-device",
+                "new-id",
+                "new-name",
+                "new-server",
+                "shared-apns-token",
+                bool_to_int(false),
+                "new-token-id",
+                Utc::now().to_rfc3339(),
+            ],
+        )
+        .expect("same apns token should be reusable once old row is revoked");
     }
 }
