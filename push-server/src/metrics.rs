@@ -4,8 +4,9 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-const LATENCY_BUCKET_BOUNDS_MS: [u64; 10] =
-    [100, 250, 500, 1_000, 2_000, 3_000, 5_000, 10_000, 20_000, 30_000];
+const LATENCY_BUCKET_BOUNDS_MS: [u64; 10] = [
+    100, 250, 500, 1_000, 2_000, 3_000, 5_000, 10_000, 20_000, 30_000,
+];
 const LATENCY_BUCKET_COUNT: usize = 11;
 
 pub struct Metrics {
@@ -71,8 +72,12 @@ impl Metrics {
             notification_tap_total: self.notification_tap_total.load(Ordering::Relaxed),
             route_success_total: self.route_success_total.load(Ordering::Relaxed),
             route_fallback_total: self.route_fallback_total.load(Ordering::Relaxed),
-            event_to_apns_latency_ms_total: self.event_to_apns_latency_ms_total.load(Ordering::Relaxed),
-            event_to_apns_latency_samples: self.event_to_apns_latency_samples.load(Ordering::Relaxed),
+            event_to_apns_latency_ms_total: self
+                .event_to_apns_latency_ms_total
+                .load(Ordering::Relaxed),
+            event_to_apns_latency_samples: self
+                .event_to_apns_latency_samples
+                .load(Ordering::Relaxed),
             event_to_apns_latency_bucket_le_ms: LATENCY_BUCKET_BOUNDS_MS.to_vec(),
             event_to_apns_latency_bucket_counts: self
                 .event_to_apns_latency_bucket_counts
@@ -97,7 +102,12 @@ impl Metrics {
             .fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn observe_ios_routing(&self, notification_tap: u64, route_success: u64, route_fallback: u64) {
+    pub fn observe_ios_routing(
+        &self,
+        notification_tap: u64,
+        route_success: u64,
+        route_fallback: u64,
+    ) {
         if notification_tap > 0 {
             self.notification_tap_total
                 .fetch_add(notification_tap, Ordering::Relaxed);
@@ -177,7 +187,11 @@ impl Metrics {
         );
         let _ = writeln!(out, "# TYPE event_to_apns_latency_ms histogram");
 
-        for (index, bound) in snapshot.event_to_apns_latency_bucket_le_ms.iter().enumerate() {
+        for (index, bound) in snapshot
+            .event_to_apns_latency_bucket_le_ms
+            .iter()
+            .enumerate()
+        {
             let value = snapshot
                 .event_to_apns_latency_bucket_counts
                 .get(index)
@@ -194,7 +208,11 @@ impl Metrics {
             .last()
             .copied()
             .unwrap_or(0);
-        let _ = writeln!(out, "event_to_apns_latency_ms_bucket{{le=\"+Inf\"}} {}", inf);
+        let _ = writeln!(
+            out,
+            "event_to_apns_latency_ms_bucket{{le=\"+Inf\"}} {}",
+            inf
+        );
         let _ = writeln!(
             out,
             "event_to_apns_latency_ms_sum {}",

@@ -101,7 +101,10 @@ impl Config {
     }
 
     pub fn ingest_url(&self) -> String {
-        format!("{}/v1/events/bell", self.public_base_url.trim_end_matches('/'))
+        format!(
+            "{}/v1/events/bell",
+            self.public_base_url.trim_end_matches('/')
+        )
     }
 }
 

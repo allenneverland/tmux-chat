@@ -193,9 +193,10 @@ async fn ingest_event(
     let mut muted = 0u64;
     let mut deliverable = Vec::new();
     for device in candidates {
-        let is_muted = state
-            .db
-            .is_muted(&device.device_id, source, event.pane_target.as_deref())?;
+        let is_muted =
+            state
+                .db
+                .is_muted(&device.device_id, source, event.pane_target.as_deref())?;
         if is_muted {
             muted += 1;
         } else {
@@ -248,7 +249,10 @@ async fn ingest_event(
     }))
 }
 
-fn authorize_device_api(db: &Database, headers: &HeaderMap) -> AppResult<crate::models::TokenRecord> {
+fn authorize_device_api(
+    db: &Database,
+    headers: &HeaderMap,
+) -> AppResult<crate::models::TokenRecord> {
     let bearer = bearer_token(headers)?;
     let token = db.validate_token(&bearer, &[Database::token_scope_device_api()])?;
     if token.consumed_at.is_some() {

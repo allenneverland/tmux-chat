@@ -10,8 +10,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::{
     CompletePairingRequest, CompletePairingResponse, CreateMuteRequest, CreateMuteResponse,
     DeviceRecord, EventSource, MuteRule, MuteScope, MuteSource, RegisterDeviceRequest,
-    RegisterDeviceResponse,
-    StartPairingRequest, StartPairingResponse, TokenRecord,
+    RegisterDeviceResponse, StartPairingRequest, StartPairingResponse, TokenRecord,
 };
 use crate::token::{generate_token, hash_token};
 
@@ -403,8 +402,8 @@ impl Database {
             )
             .optional()?;
 
-        let (token_id, scope, pairing_id, expires_at, consumed_at, revoked_at) = token_row
-            .ok_or_else(|| AppError::unauthorized("pairing token is invalid"))?;
+        let (token_id, scope, pairing_id, expires_at, consumed_at, revoked_at) =
+            token_row.ok_or_else(|| AppError::unauthorized("pairing token is invalid"))?;
 
         if scope != SCOPE_PAIRING_COMPLETE {
             return Err(AppError::unauthorized("token scope mismatch"));
@@ -532,8 +531,8 @@ impl Database {
             )
             .optional()?;
 
-        let (_token_id, scope, pairing_id, expires_at, _consumed_at, revoked_at) = token_row
-            .ok_or_else(|| AppError::unauthorized("registration token is invalid"))?;
+        let (_token_id, scope, pairing_id, expires_at, _consumed_at, revoked_at) =
+            token_row.ok_or_else(|| AppError::unauthorized("registration token is invalid"))?;
 
         if scope != SCOPE_DEVICE_REGISTER {
             return Err(AppError::unauthorized("token scope mismatch"));
@@ -556,7 +555,8 @@ impl Database {
             )
             .optional()?;
 
-        let (device_name, host_id) = pairing.ok_or_else(|| AppError::unauthorized("pairing not found"))?;
+        let (device_name, host_id) =
+            pairing.ok_or_else(|| AppError::unauthorized("pairing not found"))?;
 
         let existing = tx
             .query_row(
@@ -665,7 +665,11 @@ impl Database {
         }
     }
 
-    pub fn validate_token(&self, raw_token: &str, allowed_scopes: &[&str]) -> AppResult<TokenRecord> {
+    pub fn validate_token(
+        &self,
+        raw_token: &str,
+        allowed_scopes: &[&str],
+    ) -> AppResult<TokenRecord> {
         if raw_token.trim().is_empty() {
             return Err(AppError::unauthorized("missing bearer token"));
         }
@@ -771,7 +775,11 @@ impl Database {
         Ok(out)
     }
 
-    pub fn create_mute(&self, subject_device_row_id: &str, req: CreateMuteRequest) -> AppResult<CreateMuteResponse> {
+    pub fn create_mute(
+        &self,
+        subject_device_row_id: &str,
+        req: CreateMuteRequest,
+    ) -> AppResult<CreateMuteResponse> {
         validate_mute_request(&req)?;
 
         let conn = lock_conn(&self.conn)?;
@@ -856,8 +864,9 @@ impl Database {
 
             let scope = parse_mute_scope(&scope_raw)
                 .ok_or_else(|| AppError::internal(format!("invalid mute scope: {}", scope_raw)))?;
-            let source = parse_mute_source(&source_raw)
-                .ok_or_else(|| AppError::internal(format!("invalid mute source: {}", source_raw)))?;
+            let source = parse_mute_source(&source_raw).ok_or_else(|| {
+                AppError::internal(format!("invalid mute source: {}", source_raw))
+            })?;
             let created_at = parse_ts(&created_at_raw)?;
 
             let until = until_raw.map(|raw| parse_ts(&raw)).transpose()?;
@@ -890,7 +899,12 @@ impl Database {
         Ok(out)
     }
 
-    pub fn is_muted(&self, device_id: &str, source: EventSource, pane_target: Option<&str>) -> AppResult<bool> {
+    pub fn is_muted(
+        &self,
+        device_id: &str,
+        source: EventSource,
+        pane_target: Option<&str>,
+    ) -> AppResult<bool> {
         let conn = lock_conn(&self.conn)?;
         let mut stmt = conn.prepare(
             "SELECT scope, session_name, pane_target, source, until_ts
@@ -996,7 +1010,9 @@ fn validate_mute_request(req: &CreateMuteRequest) -> AppResult<()> {
                 .map(|s| s.trim().is_empty())
                 .unwrap_or(true)
             {
-                return Err(AppError::bad_request("session_name is required for session scope"));
+                return Err(AppError::bad_request(
+                    "session_name is required for session scope",
+                ));
             }
         }
         MuteScope::Pane => {
@@ -1006,7 +1022,9 @@ fn validate_mute_request(req: &CreateMuteRequest) -> AppResult<()> {
                 .map(|s| s.trim().is_empty())
                 .unwrap_or(true)
             {
-                return Err(AppError::bad_request("pane_target is required for pane scope"));
+                return Err(AppError::bad_request(
+                    "pane_target is required for pane scope",
+                ));
             }
         }
     }
@@ -1166,7 +1184,8 @@ mod tests {
     use crate::models::{CompletePairingRequest, RegisterDeviceRequest, StartPairingRequest};
 
     fn setup_database() -> Database {
-        let path = std::env::temp_dir().join(format!("push-server-test-{}.sqlite3", Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("push-server-test-{}.sqlite3", Uuid::new_v4()));
         Database::new(&path).expect("database should initialize")
     }
 
@@ -1281,7 +1300,9 @@ mod tests {
             .expect("list mutes should succeed");
 
         assert_eq!(rules.len(), 2);
-        assert!(rules.iter().any(|rule| rule.scope == MuteScope::Host && rule.until.is_none()));
+        assert!(rules
+            .iter()
+            .any(|rule| rule.scope == MuteScope::Host && rule.until.is_none()));
         assert!(rules.iter().any(|rule| {
             rule.scope == MuteScope::Session
                 && rule.session_name.as_deref() == Some("project")
@@ -1369,7 +1390,8 @@ mod tests {
 
     #[test]
     fn new_migrates_legacy_devices_apns_unique_constraint() {
-        let path = std::env::temp_dir().join(format!("push-server-legacy-{}.sqlite3", Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("push-server-legacy-{}.sqlite3", Uuid::new_v4()));
         let legacy = Connection::open(&path).expect("legacy database should open");
         legacy
             .execute_batch(

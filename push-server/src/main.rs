@@ -10,7 +10,10 @@ mod token;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use axum::{routing::{delete, get, post}, Router};
+use axum::{
+    routing::{delete, get, post},
+    Router,
+};
 use clap::Parser;
 use config::{Cli, Config};
 use db::Database;
@@ -47,7 +50,8 @@ async fn run() -> AppResult<()> {
         tracing::info!("compat notify token configured");
     }
 
-    let imported = db.import_legacy_device_tokens_once(config.legacy_device_tokens_file.as_deref())?;
+    let imported =
+        db.import_legacy_device_tokens_once(config.legacy_device_tokens_file.as_deref())?;
     if imported > 0 {
         tracing::info!(imported, "imported legacy APNs device tokens");
     }
@@ -64,7 +68,9 @@ async fn run() -> AppResult<()> {
             }
         }
     } else {
-        tracing::warn!("APNs credentials are not configured; events will be accepted but not delivered");
+        tracing::warn!(
+            "APNs credentials are not configured; events will be accepted but not delivered"
+        );
         None
     };
 

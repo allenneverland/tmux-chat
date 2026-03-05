@@ -124,15 +124,24 @@ impl ApnsService {
     }
 }
 
-fn build_custom_data_entries(device: &DeviceRecord, event: &ApnsEvent) -> Vec<(&'static str, Value)> {
+fn build_custom_data_entries(
+    device: &DeviceRecord,
+    event: &ApnsEvent,
+) -> Vec<(&'static str, Value)> {
     let mut entries = Vec::with_capacity(6);
-    entries.push((CUSTOM_KEY_DEVICE_ID, Value::String(device.device_id.clone())));
+    entries.push((
+        CUSTOM_KEY_DEVICE_ID,
+        Value::String(device.device_id.clone()),
+    ));
     if let Some(target) = &event.pane_target {
         entries.push((CUSTOM_KEY_PANE_TARGET, Value::String(target.clone())));
     }
     entries.push((CUSTOM_KEY_TITLE, Value::String(event.title.clone())));
     entries.push((CUSTOM_KEY_BODY, Value::String(event.body.clone())));
-    entries.push((CUSTOM_KEY_EVENT_TS, Value::String(event.event_ts.to_rfc3339())));
+    entries.push((
+        CUSTOM_KEY_EVENT_TS,
+        Value::String(event.event_ts.to_rfc3339()),
+    ));
     entries.push((
         CUSTOM_KEY_SOURCE,
         Value::String(event.source.as_str().to_string()),

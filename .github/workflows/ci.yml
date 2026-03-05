@@ -40,12 +40,13 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.86.0
           components: rustfmt
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Rust fmt (tmux-chatd + host-agent)
+      - name: Rust fmt (workspace)
         run: cargo fmt --all -- --check
 
       - name: Rust build (tmux-chatd + host-agent)
