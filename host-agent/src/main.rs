@@ -2,8 +2,8 @@ mod config;
 mod daemon;
 mod pairing;
 mod paths;
-mod shell_notify;
 mod service;
+mod shell_notify;
 mod tmux;
 
 use std::time::Duration;
@@ -170,7 +170,8 @@ async fn run_install(push_server_base_url: Option<String>) -> Result<()> {
     let paths = AgentPaths::resolve()?;
     ensure_private_dir(&paths.data_dir)?;
 
-    let binary_path = std::env::current_exe().context("failed to resolve current executable path")?;
+    let binary_path =
+        std::env::current_exe().context("failed to resolve current executable path")?;
     tmux::install_bell_hook(&paths.tmux_conf_path, &binary_path)?;
     if let Err(err) = tmux::apply_live_hook(&binary_path) {
         tracing::warn!(error = %err, "failed to apply tmux hook to live server");
@@ -189,7 +190,8 @@ async fn run_install(push_server_base_url: Option<String>) -> Result<()> {
     let paired_config = load_agent_config(&paths.config_path)?;
     let mut socket_ready = false;
     if paired_config.is_some() {
-        service::start_or_restart(&paths).context("failed to start host-agent service after install")?;
+        service::start_or_restart(&paths)
+            .context("failed to start host-agent service after install")?;
         socket_ready =
             daemon::wait_for_socket_connectable(&paths.socket_path, Duration::from_secs(10)).await;
         if !socket_ready {
@@ -256,7 +258,8 @@ async fn run_pair(token: String, push_server_base_url: Option<String>, json: boo
     updated_settings.push_server_base_url = Some(base_url.clone());
     save_settings(&paths.settings_path, &updated_settings)?;
 
-    service::start_or_restart(&paths).context("failed to start host-agent service after pairing")?;
+    service::start_or_restart(&paths)
+        .context("failed to start host-agent service after pairing")?;
     let socket_ready =
         daemon::wait_for_socket_connectable(&paths.socket_path, Duration::from_secs(10)).await;
     if !socket_ready {
@@ -486,7 +489,8 @@ fn run_install_shell_notify(min_seconds: u64) -> Result<()> {
             "bash runtime is unavailable ({reason}); install bash and ensure it is executable from non-interactive SSH sessions"
         )
     })?;
-    let binary_path = std::env::current_exe().context("failed to resolve current executable path")?;
+    let binary_path =
+        std::env::current_exe().context("failed to resolve current executable path")?;
     let result = shell_notify::install_bash_auto_notify(&paths, &binary_path, min_seconds)?;
     let probe = shell_notify::bash_runtime_probe(&paths);
     if probe.success != Some(true) {
@@ -558,7 +562,8 @@ fn detect_platform() -> String {
 }
 
 fn print_json<T: Serialize>(value: &T) -> Result<()> {
-    let serialized = serde_json::to_string_pretty(value).context("failed to serialize JSON output")?;
+    let serialized =
+        serde_json::to_string_pretty(value).context("failed to serialize JSON output")?;
     println!("{}", serialized);
     Ok(())
 }

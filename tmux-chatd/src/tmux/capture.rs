@@ -6,15 +6,7 @@ pub fn capture_pane(target: &str, lines: u32) -> Result<String, TmuxError> {
     let start_line = format!("-{}", lines);
 
     let output = Command::new("tmux")
-        .args([
-            "capture-pane",
-            "-t",
-            target,
-            "-p",
-            "-e",
-            "-S",
-            &start_line,
-        ])
+        .args(["capture-pane", "-t", target, "-p", "-e", "-S", &start_line])
         .output()
         .map_err(TmuxError::Io)?;
 

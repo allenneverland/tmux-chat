@@ -24,7 +24,7 @@ PUSH_SERVER_COMPAT_NOTIFY_TOKEN ?=
 # Include local config if exists
 -include config.local.mk
 
-.PHONY: all build install uninstall start stop restart reinstall logs clean install-hooks uninstall-hooks \
+.PHONY: all build install uninstall start stop restart reinstall logs clean fmt fmt-check install-hooks uninstall-hooks \
 	push-server-docker-dev-image push-server-docker-fmt push-server-docker-test \
 	push-server-docker-build push-server-docker-image push-server-docker-run \
 	push-server-env-init push-server-deploy push-server-stop push-server-status push-server-logs \
@@ -111,6 +111,14 @@ uninstall-hooks:
 # Clean build artifacts
 clean:
 	$(CARGO) clean
+
+# Format all Rust code in the workspace
+fmt:
+	$(CARGO) fmt --all
+
+# Check Rust formatting without writing changes
+fmt-check:
+	$(CARGO) fmt --all -- --check
 
 # Build push-server development image (for fmt/test/build inside Docker)
 push-server-docker-dev-image:

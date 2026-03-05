@@ -85,8 +85,12 @@ pub fn uninstall_bash_auto_notify(paths: &AgentPaths) -> Result<BashAutoNotifyUn
     }
 
     let script_removed = if paths.bash_auto_notify_script_path.exists() {
-        fs::remove_file(&paths.bash_auto_notify_script_path)
-            .with_context(|| format!("failed to remove {}", paths.bash_auto_notify_script_path.display()))?;
+        fs::remove_file(&paths.bash_auto_notify_script_path).with_context(|| {
+            format!(
+                "failed to remove {}",
+                paths.bash_auto_notify_script_path.display()
+            )
+        })?;
         true
     } else {
         false
@@ -108,7 +112,9 @@ pub fn configured_bash_startup_files(paths: &AgentPaths) -> Result<Vec<PathBuf>>
         }
         let content = fs::read_to_string(&startup_path)
             .with_context(|| format!("failed to read {}", startup_path.display()))?;
-        if find_any_managed_block_range(&content).is_some() && content.contains("bash-auto-notify.sh") {
+        if find_any_managed_block_range(&content).is_some()
+            && content.contains("bash-auto-notify.sh")
+        {
             configured.push(startup_path);
         }
     }
@@ -134,7 +140,12 @@ pub fn detect_bash_binary() -> std::result::Result<PathBuf, String> {
         return Ok(path);
     }
 
-    for candidate in ["/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", "/opt/homebrew/bin/bash"] {
+    for candidate in [
+        "/bin/bash",
+        "/usr/bin/bash",
+        "/usr/local/bin/bash",
+        "/opt/homebrew/bin/bash",
+    ] {
         let path = PathBuf::from(candidate);
         if path.is_file() {
             return Ok(path);
@@ -419,7 +430,10 @@ fi
 }
 
 fn install_target_startup_paths(paths: &AgentPaths) -> Vec<PathBuf> {
-    dedupe_paths(vec![paths.bashrc_path.clone(), login_startup_path_for_install(paths)])
+    dedupe_paths(vec![
+        paths.bashrc_path.clone(),
+        login_startup_path_for_install(paths),
+    ])
 }
 
 fn all_candidate_startup_paths(paths: &AgentPaths) -> Vec<PathBuf> {
@@ -454,7 +468,11 @@ fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     deduped
 }
 
-fn find_block_range(existing: &str, start_marker: &str, end_marker: &str) -> Option<(usize, usize)> {
+fn find_block_range(
+    existing: &str,
+    start_marker: &str,
+    end_marker: &str,
+) -> Option<(usize, usize)> {
     let start = existing.find(start_marker)?;
     let end_rel = existing[start..].find(end_marker)?;
     let mut block_end = start + end_rel + end_marker.len();
@@ -465,12 +483,16 @@ fn find_block_range(existing: &str, start_marker: &str, end_marker: &str) -> Opt
 }
 
 fn find_any_managed_block_range(existing: &str) -> Option<(usize, usize)> {
-    if let Some(range) = find_block_range(existing, BASH_MANAGED_BLOCK_START, BASH_MANAGED_BLOCK_END) {
+    if let Some(range) =
+        find_block_range(existing, BASH_MANAGED_BLOCK_START, BASH_MANAGED_BLOCK_END)
+    {
         return Some(range);
     }
 
     let start_suffix_pos = existing.find(BASH_MANAGED_BLOCK_START_SUFFIX)?;
-    let block_start = existing[..start_suffix_pos].rfind('\n').map_or(0, |idx| idx + 1);
+    let block_start = existing[..start_suffix_pos]
+        .rfind('\n')
+        .map_or(0, |idx| idx + 1);
     let end_suffix_rel = existing[start_suffix_pos..].find(BASH_MANAGED_BLOCK_END_SUFFIX)?;
     let mut block_end = start_suffix_pos + end_suffix_rel + BASH_MANAGED_BLOCK_END_SUFFIX.len();
     if existing[block_end..].starts_with('\n') {
@@ -508,7 +530,11 @@ fn bash_from_command_v() -> Option<PathBuf> {
     }
 
     let path = PathBuf::from(candidate);
-    if path.is_file() { Some(path) } else { None }
+    if path.is_file() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -533,18 +559,23 @@ mod tests {
                 .join("lib")
                 .join("tmux-chat")
                 .join("bash-auto-notify.sh"),
-            launchd_plist_path: base.join("Library").join("LaunchAgents").join("agent.plist"),
+            launchd_plist_path: base
+                .join("Library")
+                .join("LaunchAgents")
+                .join("agent.plist"),
             launchd_log_dir: base.join("Library").join("Logs"),
-            systemd_service_path: base.join(".config").join("systemd").join("user").join("service"),
+            systemd_service_path: base
+                .join(".config")
+                .join("systemd")
+                .join("user")
+                .join("service"),
         }
     }
 
     #[test]
     fn upsert_managed_block_is_idempotent() {
         let existing = "export FOO=1\n";
-        let managed = format!(
-            "{BASH_MANAGED_BLOCK_START}\nfoo\n{BASH_MANAGED_BLOCK_END}\n"
-        );
+        let managed = format!("{BASH_MANAGED_BLOCK_START}\nfoo\n{BASH_MANAGED_BLOCK_END}\n");
         let once = upsert_managed_block(existing, &managed);
         let twice = upsert_managed_block(&once, &managed);
         assert_eq!(once, twice);
@@ -554,9 +585,8 @@ mod tests {
 
     #[test]
     fn remove_managed_block_keeps_other_content() {
-        let input = format!(
-            "a=1\n{BASH_MANAGED_BLOCK_START}\nmanaged\n{BASH_MANAGED_BLOCK_END}\nb=2\n"
-        );
+        let input =
+            format!("a=1\n{BASH_MANAGED_BLOCK_START}\nmanaged\n{BASH_MANAGED_BLOCK_END}\nb=2\n");
         let output = remove_managed_block(&input);
         assert!(output.contains("a=1"));
         assert!(output.contains("b=2"));
@@ -570,7 +600,8 @@ mod tests {
         fs::write(&paths.profile_path, "export FOO=1\n").expect("seed profile");
         let binary_path = Path::new("/tmp/host-agent");
 
-        let first_install = install_bash_auto_notify(&paths, binary_path, 3).expect("first install");
+        let first_install =
+            install_bash_auto_notify(&paths, binary_path, 3).expect("first install");
         assert_eq!(first_install.login_startup_path, paths.profile_path);
         install_bash_auto_notify(&paths, binary_path, 3).expect("second install");
 

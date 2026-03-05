@@ -41,7 +41,10 @@ pub async fn run(paths: &AgentPaths, config: AgentConfig) -> Result<()> {
     ensure_private_dir(&paths.runtime_dir)?;
     if paths.socket_path.exists() {
         std::fs::remove_file(&paths.socket_path).with_context(|| {
-            format!("failed to remove stale socket {}", paths.socket_path.display())
+            format!(
+                "failed to remove stale socket {}",
+                paths.socket_path.display()
+            )
         })?;
     }
 
@@ -142,7 +145,11 @@ async fn handle_connection(
     Ok(())
 }
 
-async fn send_event(client: &reqwest::Client, config: &AgentConfig, event: BellEvent) -> Result<()> {
+async fn send_event(
+    client: &reqwest::Client,
+    config: &AgentConfig,
+    event: BellEvent,
+) -> Result<()> {
     let request_body: BellIngestRequest = event.into();
 
     let response = client
@@ -204,7 +211,10 @@ mod tests {
         let payload: BellIngestRequest = event.into();
         let value: Value = serde_json::to_value(payload).expect("serialize");
 
-        assert_eq!(value.get("pane_target").and_then(Value::as_str), Some("dev:0.0"));
+        assert_eq!(
+            value.get("pane_target").and_then(Value::as_str),
+            Some("dev:0.0")
+        );
         assert!(value.get("event_ts").is_some());
     }
 

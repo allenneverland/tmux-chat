@@ -34,7 +34,10 @@ impl NotifyForwarder {
 
         self.client
             .post(url)
-            .header("Authorization", format!("Bearer {}", self.compat_notify_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.compat_notify_token),
+            )
             .header("Content-Type", "application/json")
             .json(&body)
             .send()

@@ -234,10 +234,16 @@ mod tests {
         );
         assert_eq!(resolved.as_deref(), Some("https://settings.example.com"));
 
-        let resolved = resolve_push_server_base_url(None, None, Some(&config), Some("https://env.example.com"));
+        let resolved = resolve_push_server_base_url(
+            None,
+            None,
+            Some(&config),
+            Some("https://env.example.com"),
+        );
         assert_eq!(resolved.as_deref(), Some("https://config.example.com"));
 
-        let resolved = resolve_push_server_base_url(None, None, None, Some("https://env.example.com/"));
+        let resolved =
+            resolve_push_server_base_url(None, None, None, Some("https://env.example.com/"));
         assert_eq!(resolved.as_deref(), Some("https://env.example.com"));
     }
 

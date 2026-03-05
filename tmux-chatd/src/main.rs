@@ -246,7 +246,9 @@ fn extract_last_assistant_message(transcript_path: &str) -> Option<String> {
                         if t != "text" {
                             return None;
                         }
-                        item.get("text").and_then(|v| v.as_str()).map(str::to_string)
+                        item.get("text")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
                     })
                     .collect::<Vec<_>>()
             })
@@ -438,7 +440,8 @@ fn ensure_claude_event_hook(
                 .map(|arr| {
                     arr.iter().any(|h| {
                         h.get("type").and_then(|v| v.as_str()) == Some("command")
-                            && h.get("command").and_then(|v| v.as_str()) == Some(HOOK_NOTIFY_COMMAND)
+                            && h.get("command").and_then(|v| v.as_str())
+                                == Some(HOOK_NOTIFY_COMMAND)
                     })
                 })
                 .unwrap_or(false)
@@ -688,7 +691,12 @@ async fn run_notify_command(
     let pane_target = target
         .or(payload.pane_target.clone())
         .or_else(auto_detect_tmux_target_from_env)
-        .or_else(|| payload.cwd.as_deref().and_then(auto_detect_tmux_target_from_cwd));
+        .or_else(|| {
+            payload
+                .cwd
+                .as_deref()
+                .and_then(auto_detect_tmux_target_from_cwd)
+        });
 
     if let Some(ref t) = pane_target {
         payload.title = title_for_target_and_cwd(t, payload.cwd.as_deref());
@@ -788,8 +796,8 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
         .and_then(|p| p.parse().ok())
         .unwrap_or(DEFAULT_PORT);
 
-    let bind_addr = std::env::var("TMUX_CHATD_BIND_ADDR")
-        .unwrap_or_else(|_| DEFAULT_BIND_ADDR.to_string());
+    let bind_addr =
+        std::env::var("TMUX_CHATD_BIND_ADDR").unwrap_or_else(|_| DEFAULT_BIND_ADDR.to_string());
     let addr = format!("{}:{}", bind_addr, port);
     tracing::info!("Starting tmux-chatd on {}", addr);
 

@@ -172,9 +172,14 @@ fn start_or_restart_systemd(paths: &AgentPaths) -> Result<()> {
         .args(["--user", "is-active", SYSTEMD_UNIT_NAME])
         .output()
         .context("failed to execute systemctl --user is-active")?;
-    let active_value = String::from_utf8_lossy(&active_output.stdout).trim().to_string();
+    let active_value = String::from_utf8_lossy(&active_output.stdout)
+        .trim()
+        .to_string();
     if !active_output.status.success() || active_value != "active" {
-        anyhow::bail!("systemd service is not active: {}", stderr_or_stdout(&active_output));
+        anyhow::bail!(
+            "systemd service is not active: {}",
+            stderr_or_stdout(&active_output)
+        );
     }
 
     Ok(())

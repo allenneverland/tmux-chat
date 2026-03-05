@@ -46,7 +46,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Rust fmt (tmux-chatd + host-agent)
-        run: cargo fmt -p tmux-chatd -p host-agent -- --check
+        run: cargo fmt --all -- --check
 
       - name: Rust build (tmux-chatd + host-agent)
         run: cargo build --all-targets -p tmux-chatd -p host-agent
@@ -65,14 +65,6 @@ jobs:
 
       - name: Build push-server dev image
         run: docker build -f push-server/Dockerfile --target dev -t tmux-chat-push-server-dev:ci .
-
-      - name: Rust fmt in Docker (push-server)
-        run: |
-          docker run --rm \
-            -v "$PWD:/workspace" \
-            -w /workspace \
-            tmux-chat-push-server-dev:ci \
-            cargo fmt -p push-server -- --check
 
       - name: Tests in Docker (push-server)
         run: |
@@ -110,10 +102,10 @@ jobs:
       - name: Prepare Config.xcconfig
         run: |
           if [ ! -f ios/TmuxChat/Config.xcconfig ]; then
-            cat > ios/TmuxChat/Config.xcconfig <<'EOF'
-            // CI placeholder config
-            PUSH_SERVER_BASE_URL = http://127.0.0.1:8790
-            EOF
+            printf '%s\n' \
+              '// CI placeholder config' \
+              'PUSH_SERVER_BASE_URL = http://127.0.0.1:8790' \
+              > ios/TmuxChat/Config.xcconfig
           fi
 
       - name: Build iOS app

@@ -96,7 +96,11 @@ pub fn upsert_managed_block(existing: &str, managed_block: &str) -> String {
     }
 }
 
-fn find_block_range(existing: &str, start_marker: &str, end_marker: &str) -> Option<(usize, usize)> {
+fn find_block_range(
+    existing: &str,
+    start_marker: &str,
+    end_marker: &str,
+) -> Option<(usize, usize)> {
     let start = existing.find(start_marker)?;
     let end_rel = existing[start..].find(end_marker)?;
     let mut block_end = start + end_rel + end_marker.len();
@@ -112,7 +116,9 @@ fn find_any_managed_block_range(existing: &str) -> Option<(usize, usize)> {
     }
 
     let start_suffix_pos = existing.find(MANAGED_BLOCK_START_SUFFIX)?;
-    let block_start = existing[..start_suffix_pos].rfind('\n').map_or(0, |idx| idx + 1);
+    let block_start = existing[..start_suffix_pos]
+        .rfind('\n')
+        .map_or(0, |idx| idx + 1);
     let end_suffix_rel = existing[start_suffix_pos..].find(MANAGED_BLOCK_END_SUFFIX)?;
     let mut block_end = start_suffix_pos + end_suffix_rel + MANAGED_BLOCK_END_SUFFIX.len();
     if existing[block_end..].starts_with('\n') {
@@ -133,9 +139,7 @@ fn render_hook_line(binary_path: &Path) -> String {
 
 fn bell_run_shell_command(binary_path: &Path) -> String {
     let binary = shell_quote(&binary_path.to_string_lossy());
-    format!(
-        "{binary} emit-bell --pane-target #{{session_name}}:#{{window_index}}.#{{pane_index}}"
-    )
+    format!("{binary} emit-bell --pane-target #{{session_name}}:#{{window_index}}.#{{pane_index}}")
 }
 
 fn escape_for_tmux_double_quotes(input: &str) -> String {
@@ -189,12 +193,8 @@ mod tests {
 
     #[test]
     fn upsert_replaces_existing_block() {
-        let old = format!(
-            "line1\n{MANAGED_BLOCK_START}\nold\n{MANAGED_BLOCK_END}\nline2\n"
-        );
-        let new_block = format!(
-            "{MANAGED_BLOCK_START}\nnew-line\n{MANAGED_BLOCK_END}\n"
-        );
+        let old = format!("line1\n{MANAGED_BLOCK_START}\nold\n{MANAGED_BLOCK_END}\nline2\n");
+        let new_block = format!("{MANAGED_BLOCK_START}\nnew-line\n{MANAGED_BLOCK_END}\n");
 
         let updated = upsert_managed_block(&old, &new_block);
         assert!(updated.contains("new-line"));
