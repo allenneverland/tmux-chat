@@ -168,14 +168,15 @@ class ServerConfigManager {
         servers.count < PurchaseManager.shared.serverLimit
     }
 
-    func addServer(_ config: ServerConfig) {
+    @discardableResult
+    func addServer(_ config: ServerConfig) -> Bool {
         // Remove existing config with same deviceId if exists
         let isUpdate = servers.contains { $0.deviceId == config.deviceId }
         servers.removeAll { $0.deviceId == config.deviceId }
 
         // Check limit only for new servers
         if !isUpdate && !canAddServer {
-            return
+            return false
         }
 
         servers.append(config)
@@ -185,6 +186,7 @@ class ServerConfigManager {
             activeServerId = config.deviceId
         }
         save()
+        return true
     }
 
     func removeServer(_ serverId: String) {

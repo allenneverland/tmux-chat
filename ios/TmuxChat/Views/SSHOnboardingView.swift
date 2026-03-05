@@ -135,7 +135,11 @@ struct SSHOnboardingView: View {
             privateKeyPassphrase: privateKeyPassphrase
         )
 
-        let success = await coordinator.start(input: input, apnsToken: AppDelegate.shared?.deviceToken)
+        let success = await coordinator.start(
+            input: input,
+            apnsToken: AppDelegate.shared?.deviceToken,
+            replacingServerId: serverToRepair?.id
+        )
         if success {
             onCompleted?()
             dismiss()

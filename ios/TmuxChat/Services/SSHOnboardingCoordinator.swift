@@ -99,7 +99,7 @@ final class SSHOnboardingCoordinator {
         }
     }
 
-    func start(input: SSHOnboardingInput, apnsToken: String?) async -> Bool {
+    func start(input: SSHOnboardingInput, apnsToken: String?, replacingServerId: String? = nil) async -> Bool {
         isRunning = true
         errorMessage = nil
         defer { isRunning = false }
@@ -173,10 +173,16 @@ final class SSHOnboardingCoordinator {
             )
 
             step = .savingConfiguration
-            if let existing = ServerConfigManager.shared.servers.first(where: { $0.deviceId == issued.deviceId }) {
-                SSHCredentialStore.shared.delete(id: existing.sshCredentialId)
+            let replacingServer = replacingServerId.flatMap { serverId in
+                ServerConfigManager.shared.servers.first { $0.id == serverId }
             }
+            let existingByDeviceId = ServerConfigManager.shared.servers.first(where: { $0.deviceId == issued.deviceId })
             let credentialId = try SSHCredentialStore.shared.save(connectionSpec)
+
+            if let replacingServer {
+                ServerConfigManager.shared.removeServer(replacingServer.id)
+            }
+
             let config = ServerConfig(
                 serverURL: normalizedURL,
                 controlToken: issued.deviceToken,
@@ -189,7 +195,22 @@ final class SSHOnboardingCoordinator {
                 needsPushRebind: false,
                 registeredAt: Date()
             )
-            ServerConfigManager.shared.addServer(config)
+            guard ServerConfigManager.shared.addServer(config) else {
+                if let replacingServer {
+                    _ = ServerConfigManager.shared.addServer(replacingServer)
+                    ServerConfigManager.shared.setActiveServer(replacingServer.id)
+                }
+                SSHCredentialStore.shared.delete(id: credentialId)
+                throw APIError.serverError(
+                    "Cannot save server: reached server limit. Delete another server or upgrade, then retry."
+                )
+            }
+
+            if let replacingServer {
+                SSHCredentialStore.shared.delete(id: replacingServer.sshCredentialId)
+            } else if let existingByDeviceId {
+                SSHCredentialStore.shared.delete(id: existingByDeviceId.sshCredentialId)
+            }
             ServerConfigManager.shared.setActiveServer(config.id)
 
             step = .verifyingControlPlane
