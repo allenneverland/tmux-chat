@@ -185,7 +185,7 @@ fn run_tmux_command(args: &[&str], spawn_context: &str) -> Result<()> {
     let output = Command::new("tmux")
         .args(args)
         .output()
-        .context(spawn_context)?;
+        .with_context(|| spawn_context.to_string())?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         anyhow::bail!("tmux command `{}` failed: {}", args.join(" "), stderr);
