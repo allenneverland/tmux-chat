@@ -7,7 +7,7 @@ private final class RecordingSSHExecutor: SSHCommandExecuting {
     private let statusJSON: String
 
     init(
-        statusJSON: String = #"{"daemon":"host-agent","version":"0.1.0","status_schema_version":2,"features":{"bash_auto_notify_runtime_probe":true},"bash_auto_notify_configured":true,"bash_auto_notify_runtime_probe":true}"#
+        statusJSON: String = #"{"daemon":"host-agent","version":"0.1.0","status_schema_version":3,"paired":true,"socket_connectable":true,"tmux_hook_active":true,"tmux_monitor_bell":"on","tmux_bell_action":"any","service_active":true}"#
     ) {
         self.statusJSON = statusJSON
     }
@@ -39,127 +39,27 @@ private final class FailingSSHExecutor: SSHCommandExecuting {
 struct HostAgentInstallerTests {
     private let runtimeConfig = HostAgentRuntimeConfig(
         hostAgentReleaseTag: "latest",
-        requiredStatusSchemaVersion: 2
+        requiredStatusSchemaVersion: 3
     )
 
     @Test
-    func installBashAutoNotifyUsesExpectedRemoteCommand() async throws {
-        let ssh = RecordingSSHExecutor()
-        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
-        let connection = SSHConnectionSpec(
-            host: "example-host",
-            port: 22,
-            username: "alice",
-            secret: .password("secret")
-        )
-
-        try await installer.installBashAutoNotify(on: connection, minSeconds: 3)
-
-        #expect(ssh.commands.count == 2)
-        let installCommand = try #require(ssh.commands.first)
-        #expect(installCommand.contains("/bin/sh -c"))
-        #expect(installCommand.contains("install-shell-notify --min-seconds 3"))
-        #expect(installCommand.contains("XDG_RUNTIME_DIR"))
-        #expect(installCommand.contains("DBUS_SESSION_BUS_ADDRESS"))
-
-        let statusCommand = try #require(ssh.commands.last)
-        #expect(statusCommand.contains("status --json"))
-        #expect(statusCommand.contains("XDG_RUNTIME_DIR"))
-        #expect(statusCommand.contains("DBUS_SESSION_BUS_ADDRESS"))
-        #expect(!statusCommand.contains("/bin/sh -lc"))
-    }
-
-    @Test
-    func installBashAutoNotifyClampsMinSecondsToOne() async throws {
-        let ssh = RecordingSSHExecutor()
-        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
-        let connection = SSHConnectionSpec(
-            host: "example-host",
-            port: 22,
-            username: "alice",
-            secret: .password("secret")
-        )
-
-        try await installer.installBashAutoNotify(on: connection, minSeconds: 0)
-
-        let command = try #require(ssh.commands.first)
-        #expect(command.contains("install-shell-notify --min-seconds 1"))
-        #expect(command.contains("XDG_RUNTIME_DIR"))
-        #expect(command.contains("DBUS_SESSION_BUS_ADDRESS"))
-        #expect(ssh.commands.count == 2)
-    }
-
-    @Test
-    func installBashAutoNotifyFailsWhenRuntimeProbeFails() async throws {
-        let ssh = RecordingSSHExecutor(
-            statusJSON: #"{"daemon":"host-agent","version":"0.1.0","status_schema_version":2,"features":{"bash_auto_notify_runtime_probe":true},"bash_auto_notify_configured":true,"bash_auto_notify_runtime_probe":false}"#
-        )
-        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
-        let connection = SSHConnectionSpec(
-            host: "example-host",
-            port: 22,
-            username: "alice",
-            secret: .password("secret")
-        )
-
-        var didThrow = false
-        do {
-            try await installer.installBashAutoNotify(on: connection, minSeconds: 3)
-        } catch {
-            didThrow = true
-        }
-        #expect(didThrow)
-    }
-
-    @Test
-    func installBashAutoNotifyReportsUnavailableProbeDetail() async throws {
-        let ssh = RecordingSSHExecutor(
-            statusJSON: #"{"daemon":"host-agent","version":"0.1.0","status_schema_version":2,"features":{"bash_auto_notify_runtime_probe":true},"bash_auto_notify_configured":true,"bash_auto_notify_runtime_probe":null,"bash_runtime_probe_detail":"unavailable:not_found","bash_binary_path":null,"readiness_errors":["bash_auto_notify_runtime_probe_unavailable"]}"#
-        )
-        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
-        let connection = SSHConnectionSpec(
-            host: "example-host",
-            port: 22,
-            username: "alice",
-            secret: .password("secret")
-        )
-
-        var message = ""
-        do {
-            try await installer.installBashAutoNotify(on: connection, minSeconds: 3)
-        } catch {
-            message = error.localizedDescription
-        }
-        #expect(!message.isEmpty)
-        #expect(message.contains("unavailable:not_found"))
-        #expect(message.contains("readiness_errors=bash_auto_notify_runtime_probe_unavailable"))
-    }
-
-    @Test
-    func installBashAutoNotifyFailsWhenStatusSchemaIsMissing() async throws {
-        let ssh = RecordingSSHExecutor(
-            statusJSON: #"{"bash_auto_notify_configured":true,"bash_auto_notify_runtime_probe":true}"#
-        )
-        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
-        let connection = SSHConnectionSpec(
-            host: "example-host",
-            port: 22,
-            username: "alice",
-            secret: .password("secret")
-        )
-
-        var message = ""
-        do {
-            try await installer.installBashAutoNotify(on: connection, minSeconds: 3)
-        } catch {
-            message = error.localizedDescription
-        }
-        #expect(!message.isEmpty)
-        #expect(message.contains("status is incompatible"))
-    }
-
-    @Test
     func verifyHostAgentReadinessSucceedsWithoutBashFields() async throws {
+        let ssh = RecordingSSHExecutor(
+            statusJSON: #"{"daemon":"host-agent","version":"0.1.0","status_schema_version":3,"paired":true,"socket_connectable":true,"tmux_hook_active":true,"tmux_monitor_bell":"on","tmux_bell_action":"any","service_active":true}"#
+        )
+        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
+        let connection = SSHConnectionSpec(
+            host: "example-host",
+            port: 22,
+            username: "alice",
+            secret: .password("secret")
+        )
+
+        try await installer.verifyHostAgentReadiness(on: connection)
+    }
+
+    @Test
+    func verifyHostAgentReadinessFailsWhenStatusSchemaTooOld() async throws {
         let ssh = RecordingSSHExecutor(
             statusJSON: #"{"daemon":"host-agent","version":"0.1.0","status_schema_version":2,"paired":true,"socket_connectable":true,"tmux_hook_active":true,"tmux_monitor_bell":"on","tmux_bell_action":"any","service_active":true}"#
         )
@@ -171,7 +71,14 @@ struct HostAgentInstallerTests {
             secret: .password("secret")
         )
 
-        try await installer.verifyHostAgentReadiness(on: connection)
+        var message = ""
+        do {
+            try await installer.verifyHostAgentReadiness(on: connection)
+        } catch {
+            message = error.localizedDescription
+        }
+        #expect(!message.isEmpty)
+        #expect(message.contains("status schema is incompatible"))
     }
 
     @Test
@@ -200,7 +107,7 @@ struct HostAgentInstallerTests {
         let ssh = RecordingSSHExecutor()
         let pinnedConfig = HostAgentRuntimeConfig(
             hostAgentReleaseTag: "v1.0.20",
-            requiredStatusSchemaVersion: 2
+            requiredStatusSchemaVersion: 3
         )
         let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: pinnedConfig)
         let connection = SSHConnectionSpec(
@@ -223,7 +130,7 @@ struct HostAgentInstallerTests {
     @Test
     func installFailsWhenReleaseTagIsMissing() async throws {
         let ssh = RecordingSSHExecutor()
-        let badConfig = HostAgentRuntimeConfig(hostAgentReleaseTag: "", requiredStatusSchemaVersion: 2)
+        let badConfig = HostAgentRuntimeConfig(hostAgentReleaseTag: "", requiredStatusSchemaVersion: 3)
         let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: badConfig)
         let connection = SSHConnectionSpec(
             host: "example-host",
@@ -250,7 +157,7 @@ struct HostAgentInstallerTests {
     @Test
     func installFailsWhenReleaseSelectorIsInvalid() async throws {
         let ssh = RecordingSSHExecutor()
-        let badConfig = HostAgentRuntimeConfig(hostAgentReleaseTag: "stable", requiredStatusSchemaVersion: 2)
+        let badConfig = HostAgentRuntimeConfig(hostAgentReleaseTag: "stable", requiredStatusSchemaVersion: 3)
         let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: badConfig)
         let connection = SSHConnectionSpec(
             host: "example-host",

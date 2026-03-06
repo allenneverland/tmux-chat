@@ -66,10 +66,6 @@ final class HostAgentInstaller {
         let tmuxHookActive: Bool?
         let tmuxMonitorBell: String?
         let tmuxBellAction: String?
-        let bashAutoNotifyConfigured: Bool?
-        let bashAutoNotifyRuntimeProbe: Bool?
-        let bashRuntimeProbeDetail: String?
-        let bashBinaryPath: String?
         let serviceActive: Bool?
 
         enum CodingKeys: String, CodingKey {
@@ -83,10 +79,6 @@ final class HostAgentInstaller {
             case tmuxHookActive = "tmux_hook_active"
             case tmuxMonitorBell = "tmux_monitor_bell"
             case tmuxBellAction = "tmux_bell_action"
-            case bashAutoNotifyConfigured = "bash_auto_notify_configured"
-            case bashAutoNotifyRuntimeProbe = "bash_auto_notify_runtime_probe"
-            case bashRuntimeProbeDetail = "bash_runtime_probe_detail"
-            case bashBinaryPath = "bash_binary_path"
             case serviceActive = "service_active"
         }
     }
@@ -224,33 +216,6 @@ final class HostAgentInstaller {
         )
         let result = try await sshExecutor.run(command: command, on: connection)
         return result.stdout
-    }
-
-    func installBashAutoNotify(on connection: SSHConnectionSpec, minSeconds: Int = 3) async throws {
-        let threshold = max(1, minSeconds)
-        let installCommand = hostAgentCommand("install-shell-notify --min-seconds \(threshold)")
-        _ = try await sshExecutor.run(command: installCommand, on: connection)
-
-        let statusCommand = hostAgentCommand("status --json")
-        let statusResult = try await sshExecutor.run(command: statusCommand, on: connection)
-        let status = try decodeJSONFromOutput(statusResult.stdout, as: HostAgentStatusResponse.self)
-        try assertStatusCompatibility(status)
-        let readiness = status.readinessErrors?.joined(separator: ", ") ?? "none"
-        let probeDetail = status.bashRuntimeProbeDetail ?? "unknown"
-        let bashBinaryPath = status.bashBinaryPath ?? "unknown"
-
-        guard status.bashAutoNotifyConfigured == true else {
-            throw APIError.serverError(
-                "Host-agent bash auto-notify is not configured after install (bash_auto_notify_configured=false, bash_runtime_probe_detail=\(probeDetail), bash_binary_path=\(bashBinaryPath), readiness_errors=\(readiness))."
-            )
-        }
-
-        guard status.bashAutoNotifyRuntimeProbe == true else {
-            let probeValue = status.bashAutoNotifyRuntimeProbe.map { String($0) } ?? "null"
-            throw APIError.serverError(
-                "Host-agent bash auto-notify runtime probe failed after install (bash_auto_notify_runtime_probe=\(probeValue), bash_runtime_probe_detail=\(probeDetail), bash_binary_path=\(bashBinaryPath), readiness_errors=\(readiness))."
-            )
-        }
     }
 
     func verifyHostAgentReadiness(on connection: SSHConnectionSpec) async throws {

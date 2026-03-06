@@ -7,7 +7,7 @@
 	<key>HostAgentReleaseTag</key>
 	<string>latest</string>
 	<key>HostAgentRequiredStatusSchemaVersion</key>
-	<integer>2</integer>
+	<integer>3</integer>
 	<key>PushServerBaseURL</key>
 	<string>$(PUSH_SERVER_BASE_URL)</string>
 	<key>kMDItemKeywords</key>
