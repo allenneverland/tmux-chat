@@ -773,6 +773,7 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
         .route("/sessions", post(api::create_session))
         .route("/panes/{target}", delete(api::delete_pane))
         .route("/panes/{target}/input", post(api::send_input))
+        .route("/panes/{target}/key", post(api::send_key))
         .route("/panes/{target}/escape", post(api::send_escape))
         .route("/panes/{target}/output", get(api::get_output))
         .layer(middleware::from_fn_with_state(

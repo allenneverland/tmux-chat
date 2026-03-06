@@ -160,27 +160,20 @@ async fn ingest_event(
             .fetch_add(1, Ordering::Relaxed);
     }
 
-    let event_ts = req.event_ts.unwrap_or_else(Utc::now);
-    let title = req.title.unwrap_or_else(|| {
-        if source == EventSource::Bell {
-            "tmux bell".to_string()
-        } else {
-            "Coding Agent".to_string()
-        }
-    });
-    let body = req.body.unwrap_or_else(|| {
-        if source == EventSource::Bell {
-            "Bell detected".to_string()
-        } else {
-            "Waiting for input".to_string()
-        }
-    });
+    let IngestEventRequest {
+        pane_target,
+        title,
+        body,
+        event_ts,
+    } = req;
+    let event_ts = event_ts.unwrap_or_else(Utc::now);
+    let (title, body) = resolve_event_text(source, title, body, pane_target.as_deref());
 
     let event = ApnsEvent {
         source,
         title,
         body,
-        pane_target: req.pane_target,
+        pane_target,
         event_ts,
     };
 
@@ -249,6 +242,52 @@ async fn ingest_event(
     }))
 }
 
+fn resolve_event_text(
+    source: EventSource,
+    title: Option<String>,
+    body: Option<String>,
+    pane_target: Option<&str>,
+) -> (String, String) {
+    let title = title.unwrap_or_else(|| default_event_title(source, pane_target));
+    let body = body.unwrap_or_else(|| default_event_body(source));
+    (title, body)
+}
+
+fn default_event_title(source: EventSource, pane_target: Option<&str>) -> String {
+    match source {
+        EventSource::Bell => {
+            format_bell_title(pane_target).unwrap_or_else(|| "tmux bell".to_string())
+        }
+        EventSource::Agent => "Coding Agent".to_string(),
+    }
+}
+
+fn default_event_body(source: EventSource) -> String {
+    match source {
+        EventSource::Bell => "tmux bell".to_string(),
+        EventSource::Agent => "Waiting for input".to_string(),
+    }
+}
+
+fn format_bell_title(pane_target: Option<&str>) -> Option<String> {
+    let pane_target = pane_target?.trim();
+    let (session, window_pane) = pane_target.split_once(':')?;
+    let (window, pane) = window_pane.split_once('.')?;
+    if session.is_empty() || window.is_empty() || pane.is_empty() {
+        return None;
+    }
+    if !window.chars().all(|ch| ch.is_ascii_digit())
+        || !pane.chars().all(|ch| ch.is_ascii_digit())
+    {
+        return None;
+    }
+
+    Some(format!(
+        "session={} window={} pane={}",
+        session, window, pane
+    ))
+}
+
 fn authorize_device_api(
     db: &Database,
     headers: &HeaderMap,
@@ -305,8 +344,8 @@ fn validate_ios_metrics_request(req: &IosMetricsIngestRequest) -> AppResult<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::validate_ios_metrics_request;
-    use crate::models::IosMetricsIngestRequest;
+    use super::{resolve_event_text, validate_ios_metrics_request};
+    use crate::models::{EventSource, IosMetricsIngestRequest};
 
     #[test]
     fn ios_metrics_request_rejects_zero_delta() {
@@ -326,5 +365,38 @@ mod tests {
             route_fallback_total: 0,
         };
         assert!(validate_ios_metrics_request(&req).is_ok());
+    }
+
+    #[test]
+    fn bell_defaults_include_session_window_pane_in_title() {
+        let (title, body) = resolve_event_text(EventSource::Bell, None, None, Some("dev:3.1"));
+        assert_eq!(title, "session=dev window=3 pane=1");
+        assert_eq!(body, "tmux bell");
+    }
+
+    #[test]
+    fn bell_defaults_fallback_when_pane_target_is_invalid() {
+        let (title, body) = resolve_event_text(EventSource::Bell, None, None, Some("dev:3"));
+        assert_eq!(title, "tmux bell");
+        assert_eq!(body, "tmux bell");
+    }
+
+    #[test]
+    fn bell_explicit_title_and_body_are_preserved() {
+        let (title, body) = resolve_event_text(
+            EventSource::Bell,
+            Some("custom title".to_string()),
+            Some("custom body".to_string()),
+            Some("dev:3.1"),
+        );
+        assert_eq!(title, "custom title");
+        assert_eq!(body, "custom body");
+    }
+
+    #[test]
+    fn agent_defaults_remain_unchanged() {
+        let (title, body) = resolve_event_text(EventSource::Agent, None, None, Some("dev:3.1"));
+        assert_eq!(title, "Coding Agent");
+        assert_eq!(body, "Waiting for input");
     }
 }

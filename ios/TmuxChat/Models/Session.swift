@@ -49,6 +49,10 @@ struct SendInputRequest: Codable {
     let text: String
 }
 
+struct SendKeyRequest: Codable {
+    let key: String
+}
+
 struct RegisterDeviceRequest: Codable {
     let token: String
     let sandbox: Bool

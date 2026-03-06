@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use crate::config::ApnsConfig;
 use crate::error::{AppError, AppResult};
-use crate::models::{ApnsEvent, DeviceRecord, DispatchResult};
+use crate::models::{ApnsEvent, DeviceRecord, DispatchResult, EventSource};
 
 const CUSTOM_KEY_DEVICE_ID: &str = "deviceId";
 const CUSTOM_KEY_PANE_TARGET: &str = "paneTarget";
@@ -64,7 +64,8 @@ impl ApnsService {
         let mut invalid_device_ids = Vec::new();
 
         'send_each_device: for device in devices {
-            let title = build_title(&device.server_name, &event.title);
+            let title =
+                build_notification_title(&device.server_name, &event.title, event.source);
             let builder = DefaultNotificationBuilder::new()
                 .set_title(&title)
                 .set_body(&event.body)
@@ -161,7 +162,11 @@ fn create_client(key: &str, key_id: &str, team_id: &str, sandbox: bool) -> AppRe
         .map_err(|e| AppError::internal(format!("failed to initialize APNs client: {}", e)))
 }
 
-fn build_title(server_name: &str, title: &str) -> String {
+fn build_notification_title(server_name: &str, title: &str, source: EventSource) -> String {
+    if source == EventSource::Bell {
+        return title.to_string();
+    }
+
     if server_name.trim().is_empty() {
         return title.to_string();
     }
@@ -187,8 +192,9 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        build_custom_data_entries, build_title, CUSTOM_KEY_BODY, CUSTOM_KEY_DEVICE_ID,
-        CUSTOM_KEY_EVENT_TS, CUSTOM_KEY_PANE_TARGET, CUSTOM_KEY_SOURCE, CUSTOM_KEY_TITLE,
+        build_custom_data_entries, build_notification_title, CUSTOM_KEY_BODY,
+        CUSTOM_KEY_DEVICE_ID, CUSTOM_KEY_EVENT_TS, CUSTOM_KEY_PANE_TARGET, CUSTOM_KEY_SOURCE,
+        CUSTOM_KEY_TITLE,
     };
     use crate::models::{ApnsEvent, DeviceRecord, EventSource};
 
@@ -275,7 +281,17 @@ mod tests {
 
     #[test]
     fn build_title_keeps_short_text() {
-        let title = build_title("srv", "hello");
+        let title = build_notification_title("srv", "hello", EventSource::Agent);
         assert_eq!(title, "srv: hello");
+    }
+
+    #[test]
+    fn bell_title_does_not_include_server_name_prefix() {
+        let title = build_notification_title(
+            "srv",
+            "session=dev window=3 pane=1",
+            EventSource::Bell,
+        );
+        assert_eq!(title, "session=dev window=3 pane=1");
     }
 }

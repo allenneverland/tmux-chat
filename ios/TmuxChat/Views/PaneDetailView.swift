@@ -130,6 +130,9 @@ struct PaneDetailView: View {
     @FocusState private var isInputFocused: Bool
     @State private var showCommandEditor = false
     @State private var showCommandPicker = false
+    @State private var showShortcutSettings = false
+    @State private var shortcutToolbarCollapsed = true
+    @State private var shortcutModifierSelection = ShortcutModifierSelection()
 
     init(pane: Pane, windowName: String) {
         self.pane = pane
@@ -150,6 +153,12 @@ struct PaneDetailView: View {
         }
     }
 
+    private var commandButtonOffsetY: CGFloat {
+        let quickActionOffset: CGFloat = hasQuickAction ? -96 : -52
+        let shortcutOffset: CGFloat = shortcutToolbarCollapsed ? 0 : -48
+        return quickActionOffset + shortcutOffset
+    }
+
     private func sendMessage() {
         let message = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty, !viewModel.isSending else { return }
@@ -157,6 +166,17 @@ struct PaneDetailView: View {
         isInputFocused = false
         Task {
             await viewModel.sendInput(message)
+        }
+    }
+
+    private func sendShortcut(_ key: ShortcutCatalogKey, modifiers: Set<ShortcutModifier>) {
+        guard !viewModel.isSending else { return }
+        let token = TmuxShortcutTokenBuilder.token(baseToken: key.tmuxToken, modifiers: modifiers)
+        Task {
+            let sent = await viewModel.sendKey(token)
+            if sent {
+                shortcutModifierSelection.clearOneShotStates()
+            }
         }
     }
 
@@ -278,6 +298,19 @@ struct PaneDetailView: View {
                 EmptyView()
             }
 
+            ShortcutToolbarView(
+                isCollapsed: $shortcutToolbarCollapsed,
+                modifierSelection: $shortcutModifierSelection,
+                isSending: viewModel.isSending,
+                onOpenSettings: {
+                    showShortcutSettings = true
+                },
+                onKeyTapped: { key, modifiers in
+                    sendShortcut(key, modifiers: modifiers)
+                }
+            )
+            Divider()
+
             ZStack(alignment: .topTrailing) {
                 InputComposerView(text: $inputText, isFocused: $isInputFocused)
                     .disabled(viewModel.isSending)
@@ -315,8 +348,8 @@ struct PaneDetailView: View {
                     }
                     .disabled(!canSend)
                 }
-                .offset(x: -12, y: hasQuickAction ? -96 : -52)
-                .animation(.easeInOut(duration: 0.2), value: hasQuickAction)
+                .offset(x: -12, y: commandButtonOffsetY)
+                .animation(.easeInOut(duration: 0.2), value: commandButtonOffsetY)
             }
         }
         .navigationTitle(windowName)
@@ -365,6 +398,10 @@ struct PaneDetailView: View {
                 }
             )
             .modifier(iPadPagePresentationModifier())
+        }
+        .sheet(isPresented: $showShortcutSettings) {
+            ShortcutSettingsView()
+                .modifier(iPadPagePresentationModifier())
         }
         .task {
             await viewModel.startPolling()
@@ -428,6 +465,7 @@ class PaneDetailViewModel {
     private let api = TmuxChatAPI.shared
     @ObservationIgnored private var pollingTask: Task<Void, Never>?
     @ObservationIgnored private var rawOutput: String = ""
+    @ObservationIgnored private var didReportUnsupportedKeyEndpoint = false
 
     init(target: String) {
         self.target = target
@@ -727,6 +765,43 @@ class PaneDetailViewModel {
         } catch {
             errorMessage = error.localizedDescription
             showError = true
+        }
+    }
+
+    func sendKey(_ key: String) async -> Bool {
+        isSending = true
+        defer { isSending = false }
+
+        do {
+            try await api.sendKey(target: target, key: key)
+            try? await Task.sleep(for: .milliseconds(150))
+            await refreshSilently()
+            return true
+        } catch let error as APIError {
+            switch error {
+            case .unauthorized:
+                errorMessage = "Server authentication expired. Reconnect and re-pair this server."
+                showError = true
+            case .serverError(let message):
+                if message == "HTTP 404" {
+                    if !didReportUnsupportedKeyEndpoint {
+                        didReportUnsupportedKeyEndpoint = true
+                        errorMessage = "This server version does not support shortcut keys yet. Upgrade tmux-chatd first."
+                        showError = true
+                    }
+                } else {
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
+            default:
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+            return false
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+            return false
         }
     }
 
