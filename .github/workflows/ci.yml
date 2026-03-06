@@ -29,22 +29,7 @@ jobs:
           grep -n "<key>HostAgentReleaseTag</key>" ios/TmuxChat/Info.plist
           grep -n "<key>HostAgentRequiredStatusSchemaVersion</key>" ios/TmuxChat/Info.plist
 
-          release_tag="$(
-            python3 - <<'PY'
-            import plistlib
-            with open("ios/TmuxChat/Info.plist", "rb") as fp:
-                info = plistlib.load(fp)
-            tag = str(info.get("HostAgentReleaseTag", "")).strip()
-            schema = info.get("HostAgentRequiredStatusSchemaVersion")
-            if not tag or "$(" in tag:
-                raise SystemExit("HostAgentReleaseTag must be a concrete version tag (for example v1.0.19).")
-            if not tag.startswith("v"):
-                raise SystemExit(f"HostAgentReleaseTag must start with 'v' (current: {tag}).")
-            if not isinstance(schema, int) or schema <= 0:
-                raise SystemExit(f"HostAgentRequiredStatusSchemaVersion must be a positive integer (current: {schema!r}).")
-            print(tag)
-            PY
-          )"
+          release_tag="$(python3 -c 'import plistlib,sys; info=plistlib.load(open("ios/TmuxChat/Info.plist","rb")); tag=str(info.get("HostAgentReleaseTag","")).strip(); schema=info.get("HostAgentRequiredStatusSchemaVersion"); (not tag or "$(" in tag) and sys.exit("HostAgentReleaseTag must be a concrete version tag (for example v1.0.19)."); (not tag.startswith("v")) and sys.exit(f"HostAgentReleaseTag must start with v (current: {tag})."); (not isinstance(schema,int) or schema<=0) and sys.exit(f"HostAgentRequiredStatusSchemaVersion must be a positive integer (current: {schema!r})."); print(tag)')"
           echo "Validated HostAgentReleaseTag=${release_tag}"
 
           api_url="https://api.github.com/repos/allenneverland/tmux-chat/releases/tags/${release_tag}"
