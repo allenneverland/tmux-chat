@@ -49,12 +49,10 @@ pub fn is_hook_configured(tmux_conf_path: &Path) -> Result<bool> {
     }
     let content = fs::read_to_string(tmux_conf_path)
         .with_context(|| format!("failed to read {}", tmux_conf_path.display()))?;
-    Ok(
-        has_managed_markers(&content)
-            && content.contains("emit-bell")
-            && content.contains("monitor-bell on")
-            && content.contains("bell-action any"),
-    )
+    Ok(has_managed_markers(&content)
+        && content.contains("emit-bell")
+        && content.contains("monitor-bell on")
+        && content.contains("bell-action any"))
 }
 
 pub fn is_live_hook_active() -> bool {
