@@ -207,7 +207,7 @@ pub fn bash_runtime_probe(paths: &AgentPaths) -> BashRuntimeProbeResult {
 pub fn render_startup_managed_block(script_path: &Path) -> String {
     let quoted_script_path = shell_quote(&script_path.to_string_lossy());
     format!(
-        "{BASH_MANAGED_BLOCK_START}\n# Managed by `host-agent install-shell-notify`; changes may be overwritten.\nif [ -f {quoted_script_path} ]; then\n  . {quoted_script_path}\nfi\n{BASH_MANAGED_BLOCK_END}\n"
+        "{BASH_MANAGED_BLOCK_START}\n# Managed by `host-agent install-shell-notify`; changes may be overwritten.\nif [ -n \"${{BASH_VERSION:-}}\" ] && [ -f {quoted_script_path} ]; then\n  . {quoted_script_path}\nfi\n{BASH_MANAGED_BLOCK_END}\n"
     )
 }
 
@@ -516,7 +516,7 @@ fn shell_quote(raw: &str) -> String {
 
 fn bash_from_command_v() -> Option<PathBuf> {
     let output = Command::new("sh")
-        .args(["-lc", "command -v bash 2>/dev/null || true"])
+        .args(["-c", "command -v bash 2>/dev/null || true"])
         .output()
         .ok()?;
 
@@ -636,5 +636,12 @@ mod tests {
         assert!(script.contains("TMUX_CHAT_BASH_AUTO_NOTIFY_PROBE"));
         assert!(script.contains("if [[ \"${TMUX_CHAT_NOTIFY_PROBE_MODE}\" == \"1\" ]]; then"));
         assert!(script.contains("return 0"));
+    }
+
+    #[test]
+    fn startup_managed_block_sources_only_in_bash() {
+        let block = render_startup_managed_block(Path::new("/tmp/bash-auto-notify.sh"));
+        assert!(block.contains("[ -n \"${BASH_VERSION:-}\" ]"));
+        assert!(block.contains(". '/tmp/bash-auto-notify.sh'"));
     }
 }

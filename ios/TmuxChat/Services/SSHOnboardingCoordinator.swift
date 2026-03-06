@@ -124,7 +124,7 @@ final class SSHOnboardingCoordinator {
 
             step = .verifyingTmuxChatd
             let hasTmuxChatd = (try? await sshExecutor.run(
-                command: "/bin/sh -lc \(shellQuote("command -v tmux-chatd >/dev/null 2>&1 || [ -x \"$HOME/.local/bin/tmux-chatd\" ]"))",
+                command: "/bin/sh -c \(shellQuote("command -v tmux-chatd >/dev/null 2>&1 || [ -x \"$HOME/.local/bin/tmux-chatd\" ]"))",
                 on: connectionSpec
             )) != nil
             if !hasTmuxChatd {
@@ -312,7 +312,7 @@ final class SSHOnboardingCoordinator {
     }
 
     private func validateSSHUser(on connection: SSHConnectionSpec) async throws {
-        let result = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote("id -un"))", on: connection)
+        let result = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote("id -un"))", on: connection)
         let remoteUser = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !remoteUser.isEmpty else {
             throw APIError.serverError("Unable to determine remote SSH user")
@@ -330,7 +330,7 @@ final class SSHOnboardingCoordinator {
     ) async throws -> IssuedDeviceCredentials {
         let rawDeviceName = UIDevice.current.name
         let command = "\(shellQuote(tmuxChatdExecutable)) devices issue --name \(shellQuote(rawDeviceName)) --json"
-        let result = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(command))", on: connection)
+        let result = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(command))", on: connection)
         return try decodeJSONFromOutput(result.stdout, as: IssuedDeviceCredentials.self)
     }
 

@@ -175,18 +175,22 @@ final class HostAgentInstaller {
         download() {
           if command -v curl >/dev/null 2>&1; then
             curl -fsSL "$1" -o "$2"
-            return 0
+            return $?
           fi
           if command -v wget >/dev/null 2>&1; then
             wget -qO "$2" "$1"
-            return 0
+            return $?
           fi
           return 1
         }
 
         mkdir -p "$HOME/.local/bin"
         if ! download \(shellQuote(url)) "$TMPDIR/host-agent.tgz"; then
-          echo "failed to download host-agent archive from \(shellQuote(url))" >&2
+          echo "failed to download host-agent archive from \(shellQuote(url)) (release_tag=\(shellQuote(releaseTag)), asset=\(shellQuote(releaseAssetName)))" >&2
+          exit 1
+        fi
+        if [ ! -s "$TMPDIR/host-agent.tgz" ]; then
+          echo "host-agent archive download produced empty file (release_tag=\(shellQuote(releaseTag)), asset=\(shellQuote(releaseAssetName)))" >&2
           exit 1
         fi
         tar -xzf "$TMPDIR/host-agent.tgz" -C "$TMPDIR"
@@ -205,7 +209,16 @@ final class HostAgentInstaller {
         "$HOME/.local/bin/host-agent" install --push-server-base-url \(shellQuote(pushServerBaseURL))
         """
 
-        _ = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(script))", on: connection)
+        do {
+            _ = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
+        } catch {
+            throw mapInstallFailure(
+                error,
+                releaseTag: releaseTag,
+                releaseAssetName: releaseAssetName,
+                url: url
+            )
+        }
     }
 
     func pair(
@@ -397,7 +410,7 @@ final class HostAgentInstaller {
         exit 1
         """
 
-        _ = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(script))", on: connection)
+        _ = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
     }
 
     private func detectTmuxChatdExecutable(on connection: SSHConnectionSpec) async throws -> String? {
@@ -410,7 +423,7 @@ final class HostAgentInstaller {
         exit 0
         """
 
-        let result = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(script))", on: connection)
+        let result = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
         let executable = result.stdout
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return executable.isEmpty ? nil : executable
@@ -517,7 +530,7 @@ final class HostAgentInstaller {
         "$HOME/.local/bin/tmux-chatd" --version >/dev/null 2>&1
         """
 
-        _ = try await sshExecutor.run(command: "/bin/sh -lc \(shellQuote(script))", on: connection)
+        _ = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
     }
 
     private func shellQuote(_ value: String) -> String {
@@ -533,14 +546,14 @@ final class HostAgentInstaller {
         fi
         "$HOME/.local/bin/host-agent" \(args)
         """
-        return "/bin/sh -lc \(shellQuote(script))"
+        return "/bin/sh -c \(shellQuote(script))"
     }
 
     private func requireHostAgentReleaseTag() throws -> String {
         let value = runtimeConfig.hostAgentReleaseTag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, !value.contains("$(") else {
             throw APIError.serverError(
-                "Host-agent release tag is not configured. Set Info.plist HostAgentReleaseTag to a concrete release tag (for example v1.0.14)."
+                "Host-agent release tag is not configured. Set Info.plist HostAgentReleaseTag to a concrete release tag (for example v1.0.19)."
             )
         }
         guard value.first == "v" else {
@@ -549,6 +562,29 @@ final class HostAgentInstaller {
             )
         }
         return value
+    }
+
+    private func mapInstallFailure(
+        _ error: Error,
+        releaseTag: String,
+        releaseAssetName: String,
+        url: String
+    ) -> Error {
+        guard case .commandFailed(_, let stderr) = error as? SSHCommandExecutorError else {
+            return error
+        }
+
+        let lowercased = stderr.lowercased()
+        let is404 = (lowercased.contains("curl: (22)") && lowercased.contains("404"))
+            || lowercased.contains("requested url returned error: 404")
+            || lowercased.contains(" 404 ")
+        if is404 {
+            return APIError.serverError(
+                "Host-agent release asset not found (release_tag=\(releaseTag), asset=\(releaseAssetName)). Verify the GitHub release exists and update Info.plist HostAgentReleaseTag if needed. URL: \(url)"
+            )
+        }
+
+        return error
     }
 
     private func requiredHostAgentStatusSchemaVersion() throws -> Int {

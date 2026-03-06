@@ -22,9 +22,23 @@ private final class RecordingSSHExecutor: SSHCommandExecuting {
     }
 }
 
+private final class FailingSSHExecutor: SSHCommandExecuting {
+    private let error: Error
+
+    init(error: Error) {
+        self.error = error
+    }
+
+    func run(command: String, on connection: SSHConnectionSpec) async throws -> SSHCommandResult {
+        _ = command
+        _ = connection
+        throw error
+    }
+}
+
 struct HostAgentInstallerTests {
     private let runtimeConfig = HostAgentRuntimeConfig(
-        hostAgentReleaseTag: "v1.0.14",
+        hostAgentReleaseTag: "v1.0.19",
         requiredStatusSchemaVersion: 2
     )
 
@@ -43,7 +57,7 @@ struct HostAgentInstallerTests {
 
         #expect(ssh.commands.count == 2)
         let installCommand = try #require(ssh.commands.first)
-        #expect(installCommand.contains("/bin/sh -lc"))
+        #expect(installCommand.contains("/bin/sh -c"))
         #expect(installCommand.contains("install-shell-notify --min-seconds 3"))
         #expect(installCommand.contains("XDG_RUNTIME_DIR"))
         #expect(installCommand.contains("DBUS_SESSION_BUS_ADDRESS"))
@@ -52,7 +66,7 @@ struct HostAgentInstallerTests {
         #expect(statusCommand.contains("status --json"))
         #expect(statusCommand.contains("XDG_RUNTIME_DIR"))
         #expect(statusCommand.contains("DBUS_SESSION_BUS_ADDRESS"))
-        #expect(!statusCommand.contains("bash -lic"))
+        #expect(!statusCommand.contains("/bin/sh -lc"))
     }
 
     @Test
@@ -162,7 +176,7 @@ struct HostAgentInstallerTests {
         )
 
         let command = try #require(ssh.commands.first)
-        #expect(command.contains("/releases/download/v1.0.14/host-agent-linux-x86_64-musl.tar.gz"))
+        #expect(command.contains("/releases/download/v1.0.19/host-agent-linux-x86_64-musl.tar.gz"))
         #expect(!command.contains("/releases/latest/download/"))
     }
 
@@ -191,5 +205,39 @@ struct HostAgentInstallerTests {
         #expect(!message.isEmpty)
         #expect(message.contains("release tag is not configured"))
         #expect(ssh.commands.isEmpty)
+    }
+
+    @Test
+    func installReportsReleaseAssetNotFoundWhenDownloadReturns404() async throws {
+        let stderr = """
+        curl: (22) The requested URL returned error: 404
+        failed to download host-agent archive from 'https://github.com/allenneverland/tmux-chat/releases/download/v1.0.19/host-agent-linux-x86_64-musl.tar.gz'
+        """
+        let ssh = FailingSSHExecutor(
+            error: SSHCommandExecutorError.commandFailed(exitCode: 1, stderr: stderr)
+        )
+        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
+        let connection = SSHConnectionSpec(
+            host: "example-host",
+            port: 22,
+            username: "alice",
+            secret: .password("secret")
+        )
+
+        var message = ""
+        do {
+            try await installer.install(
+                on: connection,
+                pushServerBaseURL: "https://push.example.com",
+                releaseAssetName: "host-agent-linux-x86_64-musl.tar.gz"
+            )
+        } catch {
+            message = error.localizedDescription
+        }
+
+        #expect(!message.isEmpty)
+        #expect(message.contains("release asset not found"))
+        #expect(message.contains("release_tag=v1.0.19"))
+        #expect(message.contains("host-agent-linux-x86_64-musl.tar.gz"))
     }
 }

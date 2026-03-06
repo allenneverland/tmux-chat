@@ -21,12 +21,53 @@ jobs:
 
       - name: Ensure host-agent release is pinned
         run: |
+          set -euo pipefail
           if grep -n "releases/latest/download/.*host-agent" ios/TmuxChat/Services/HostAgentInstaller.swift; then
             echo "HostAgentInstaller must not use releases/latest for host-agent."
             exit 1
           fi
           grep -n "<key>HostAgentReleaseTag</key>" ios/TmuxChat/Info.plist
           grep -n "<key>HostAgentRequiredStatusSchemaVersion</key>" ios/TmuxChat/Info.plist
+
+          release_tag="$(
+            python3 - <<'PY'
+            import plistlib
+            with open("ios/TmuxChat/Info.plist", "rb") as fp:
+                info = plistlib.load(fp)
+            tag = str(info.get("HostAgentReleaseTag", "")).strip()
+            schema = info.get("HostAgentRequiredStatusSchemaVersion")
+            if not tag or "$(" in tag:
+                raise SystemExit("HostAgentReleaseTag must be a concrete version tag (for example v1.0.19).")
+            if not tag.startswith("v"):
+                raise SystemExit(f"HostAgentReleaseTag must start with 'v' (current: {tag}).")
+            if not isinstance(schema, int) or schema <= 0:
+                raise SystemExit(f"HostAgentRequiredStatusSchemaVersion must be a positive integer (current: {schema!r}).")
+            print(tag)
+            PY
+          )"
+          echo "Validated HostAgentReleaseTag=${release_tag}"
+
+          api_url="https://api.github.com/repos/allenneverland/tmux-chat/releases/tags/${release_tag}"
+          release_json="$(curl -fsSL -H "Accept: application/vnd.github+json" "$api_url")"
+
+          required_assets=(
+            "host-agent-darwin-aarch64.tar.gz"
+            "host-agent-darwin-x86_64.tar.gz"
+            "host-agent-linux-x86_64-musl.tar.gz"
+            "host-agent-linux-aarch64-gnu.tar.gz"
+          )
+          missing=0
+          for asset in "${required_assets[@]}"; do
+            if echo "$release_json" | jq -e --arg asset "$asset" '.assets[]? | select(.name == $asset)' >/dev/null; then
+              echo "Verified release asset: $asset"
+            else
+              echo "::error::Missing required host-agent release asset '$asset' under tag '${release_tag}'."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
 
   rust-core:
     name: Rust Core
