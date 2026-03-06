@@ -55,18 +55,9 @@ final class HostAgentInstaller {
     private let runtimeConfig: HostAgentRuntimeConfig
 
     private struct HostAgentStatusResponse: Decodable {
-        struct HostAgentStatusFeatures: Decodable {
-            let bashAutoNotifyRuntimeProbe: Bool?
-
-            enum CodingKeys: String, CodingKey {
-                case bashAutoNotifyRuntimeProbe = "bash_auto_notify_runtime_probe"
-            }
-        }
-
         let daemon: String?
         let version: String?
         let statusSchemaVersion: Int?
-        let features: HostAgentStatusFeatures?
         let notificationReady: Bool?
         let readinessErrors: [String]?
 
@@ -85,7 +76,6 @@ final class HostAgentInstaller {
             case daemon
             case version
             case statusSchemaVersion = "status_schema_version"
-            case features
             case notificationReady = "notification_ready"
             case readinessErrors = "readiness_errors"
             case paired
@@ -274,8 +264,6 @@ final class HostAgentInstaller {
             && (status.tmuxHookActive == true)
             && (status.tmuxMonitorBell == "on")
             && (status.tmuxBellAction == "any")
-            && (status.bashAutoNotifyConfigured == true)
-            && (status.bashAutoNotifyRuntimeProbe ?? true)
             && (status.serviceActive == true)
         let ready = status.notificationReady ?? inferredReady
         guard ready else {
@@ -285,7 +273,7 @@ final class HostAgentInstaller {
             } else {
                 let serviceActiveText = status.serviceActive.map { $0 ? "true" : "false" } ?? "unknown"
                 details =
-                    "paired=\(status.paired == true), socket_connectable=\(status.socketConnectable == true), tmux_hook_active=\(status.tmuxHookActive == true), tmux_monitor_bell=\(status.tmuxMonitorBell ?? "unknown"), tmux_bell_action=\(status.tmuxBellAction ?? "unknown"), bash_auto_notify_configured=\(status.bashAutoNotifyConfigured == true), bash_auto_notify_runtime_probe=\(status.bashAutoNotifyRuntimeProbe == true), service_active=\(serviceActiveText)"
+                    "paired=\(status.paired == true), socket_connectable=\(status.socketConnectable == true), tmux_hook_active=\(status.tmuxHookActive == true), tmux_monitor_bell=\(status.tmuxMonitorBell ?? "unknown"), tmux_bell_action=\(status.tmuxBellAction ?? "unknown"), service_active=\(serviceActiveText)"
             }
             throw APIError.serverError("Host-agent notifications are not ready (\(details)).")
         }
@@ -630,11 +618,6 @@ final class HostAgentInstaller {
             )
         }
 
-        guard status.features?.bashAutoNotifyRuntimeProbe == true else {
-            throw APIError.serverError(
-                "Host-agent is missing required feature bash_auto_notify_runtime_probe (schema=\(remoteSchema), version=\(remoteVersion), release_selector=\(releaseSelector))."
-            )
-        }
     }
 
     private func decodeJSONFromOutput<T: Decodable>(_ output: String, as type: T.Type) throws -> T {

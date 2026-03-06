@@ -159,6 +159,22 @@ struct HostAgentInstallerTests {
     }
 
     @Test
+    func verifyHostAgentReadinessSucceedsWithoutBashFields() async throws {
+        let ssh = RecordingSSHExecutor(
+            statusJSON: #"{"daemon":"host-agent","version":"0.1.0","status_schema_version":2,"paired":true,"socket_connectable":true,"tmux_hook_active":true,"tmux_monitor_bell":"on","tmux_bell_action":"any","service_active":true}"#
+        )
+        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
+        let connection = SSHConnectionSpec(
+            host: "example-host",
+            port: 22,
+            username: "alice",
+            secret: .password("secret")
+        )
+
+        try await installer.verifyHostAgentReadiness(on: connection)
+    }
+
+    @Test
     func installUsesLatestHostAgentReleaseSelector() async throws {
         let ssh = RecordingSSHExecutor()
         let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)

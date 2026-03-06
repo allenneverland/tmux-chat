@@ -27,16 +27,19 @@ pub fn install_bell_hook(tmux_conf_path: &Path, binary_path: &Path) -> Result<()
 }
 
 pub fn apply_live_hook(binary_path: &Path) -> Result<()> {
+    run_tmux_command(
+        &["set-window-option", "-g", "monitor-bell", "on"],
+        "failed to execute tmux set-window-option",
+    )?;
+    run_tmux_command(
+        &["set-option", "-g", "bell-action", "any"],
+        "failed to execute tmux set-option",
+    )?;
     let run_shell = format!("run-shell \"{}\"", bell_run_shell_command(binary_path));
-    let output = Command::new("tmux")
-        .args(["set-hook", "-g", "alert-bell", &run_shell])
-        .output()
-        .context("failed to execute tmux set-hook")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        anyhow::bail!("tmux set-hook failed: {}", stderr);
-    }
+    run_tmux_command(
+        &["set-hook", "-g", "alert-bell", &run_shell],
+        "failed to execute tmux set-hook",
+    )?;
     Ok(())
 }
 
@@ -46,7 +49,12 @@ pub fn is_hook_configured(tmux_conf_path: &Path) -> Result<bool> {
     }
     let content = fs::read_to_string(tmux_conf_path)
         .with_context(|| format!("failed to read {}", tmux_conf_path.display()))?;
-    Ok(has_managed_markers(&content) && content.contains("emit-bell"))
+    Ok(
+        has_managed_markers(&content)
+            && content.contains("emit-bell")
+            && content.contains("monitor-bell on")
+            && content.contains("bell-action any"),
+    )
 }
 
 pub fn is_live_hook_active() -> bool {
@@ -72,9 +80,11 @@ pub fn bell_action_value() -> Option<String> {
 }
 
 pub fn render_managed_block(binary_path: &Path) -> String {
+    let monitor_bell_line = "set-window-option -g monitor-bell on";
+    let bell_action_line = "set-option -g bell-action any";
     let hook_line = render_hook_line(binary_path);
     format!(
-        "{MANAGED_BLOCK_START}\n# Managed by `host-agent install`; changes may be overwritten.\n{hook_line}\n{MANAGED_BLOCK_END}\n"
+        "{MANAGED_BLOCK_START}\n# Managed by `host-agent install`; changes may be overwritten.\n{monitor_bell_line}\n{bell_action_line}\n{hook_line}\n{MANAGED_BLOCK_END}\n"
     )
 }
 
@@ -173,6 +183,18 @@ fn query_tmux_value(args: &[&str]) -> Option<String> {
     }
 }
 
+fn run_tmux_command(args: &[&str], spawn_context: &str) -> Result<()> {
+    let output = Command::new("tmux")
+        .args(args)
+        .output()
+        .context(spawn_context)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        anyhow::bail!("tmux command `{}` failed: {}", args.join(" "), stderr);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +223,14 @@ mod tests {
         assert!(!updated.contains("\nold\n"));
         assert!(updated.contains("line1"));
         assert!(updated.contains("line2"));
+    }
+
+    #[test]
+    fn render_managed_block_contains_bell_settings_and_hook() {
+        let block = render_managed_block(Path::new("/tmp/host-agent"));
+        assert!(block.contains("set-window-option -g monitor-bell on"));
+        assert!(block.contains("set-option -g bell-action any"));
+        assert!(block.contains("set-hook -g alert-bell"));
+        assert!(block.contains("emit-bell"));
     }
 }

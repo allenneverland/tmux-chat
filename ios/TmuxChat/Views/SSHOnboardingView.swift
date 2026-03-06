@@ -40,9 +40,9 @@ struct SSHOnboardingView: View {
 
     private var footerText: String {
         if isRepairMode {
-            return "TmuxChat reconnects over SSH, updates host-agent and shell auto-notify, re-pairs notifications, and validates readiness."
+            return "TmuxChat reconnects over SSH, updates host-agent, re-pairs notifications, and validates readiness."
         }
-        return "TmuxChat connects over SSH, installs host-agent, configures Bash auto-notify for long-running commands, pairs notifications, and saves credentials. Use the same SSH user that owns your tmux sessions."
+        return "TmuxChat connects over SSH, installs host-agent, pairs notifications, and saves credentials. Use the same SSH user that owns your tmux sessions."
     }
 
     var body: some View {

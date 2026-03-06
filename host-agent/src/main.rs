@@ -349,14 +349,6 @@ async fn run_status(json: bool) -> Result<()> {
         Some(other) => readiness_errors.push(format!("tmux_bell_action_not_any:{other}")),
         None => readiness_errors.push("tmux_bell_action_unknown".to_string()),
     }
-    if !bash_auto_notify_configured {
-        readiness_errors.push("bash_auto_notify_not_configured".to_string());
-    }
-    match bash_auto_notify_runtime_probe {
-        Some(true) => {}
-        Some(false) => readiness_errors.push("bash_auto_notify_runtime_probe_failed".to_string()),
-        None => readiness_errors.push("bash_auto_notify_runtime_probe_unavailable".to_string()),
-    }
     match service_status.manager {
         service::ServiceManager::Unsupported => {}
         _ => {

@@ -115,7 +115,6 @@ The app will:
 
 - verify SSH access
 - install `host-agent` remotely
-- configure Bash command-finish auto-notify (`host-agent install-shell-notify --min-seconds 3`)
 - issue control credentials (`tmux-chatd devices issue --json` on host)
 - run push pairing and APNs registration
 - save server configuration and verify tmux API
@@ -127,8 +126,20 @@ After onboarding, verify notification readiness on the host:
 sleep 4 && true
 ```
 
-Ensure `notification_ready` is `true`, `bash_auto_notify_configured` is `true`, and `readiness_errors` is empty.
+Ensure `notification_ready` is `true` and `readiness_errors` is empty.
 Use a long-running command (`sleep 4 && true`) for verification. `printf '\a'` can ring the terminal without triggering tmux's `alert-bell` hook.
+
+Optional: enable Bash command-finish notifications (long-running commands):
+
+```bash
+~/.local/bin/host-agent install-shell-notify --min-seconds 3
+```
+
+If you previously enabled Bash auto-notify and want to remove it:
+
+```bash
+~/.local/bin/host-agent uninstall-shell-notify
+```
 
 ### 5. Optional: coding-agent notification hooks
 
