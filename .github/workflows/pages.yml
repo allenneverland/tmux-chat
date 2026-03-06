@@ -27,8 +27,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Preflight Pages configuration
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            try {
+              const { data } = await github.rest.repos.getPages({ owner, repo });
+              const buildType = data.build_type ?? "unknown";
+
+              if (buildType !== "workflow") {
+                core.setFailed(
+                  `GitHub Pages is enabled, but build_type is '${buildType}'. ` +
+                  "Set Settings > Pages > Build and deployment > Source to 'GitHub Actions'."
+                );
+                return;
+              }
+
+              core.info(`GitHub Pages preflight passed (build_type=${buildType}).`);
+            } catch (error) {
+              if (error.status === 404) {
+                core.setFailed(
+                  "GitHub Pages is not enabled for this repository. " +
+                  "Go to Settings > Pages and set Build and deployment > Source to 'GitHub Actions'."
+                );
+                return;
+              }
+
+              throw error;
+            }
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: false
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
