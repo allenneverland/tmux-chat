@@ -165,8 +165,11 @@ final class HostAgentInstaller {
         pushServerBaseURL: String,
         releaseAssetName: String
     ) async throws {
-        let releaseTag = try requireHostAgentReleaseTag()
-        let url = "https://github.com/allenneverland/tmux-chat/releases/download/\(releaseTag)/\(releaseAssetName)"
+        let releaseSelector = try requireHostAgentReleaseSelector()
+        let url = hostAgentReleaseDownloadURL(
+            releaseSelector: releaseSelector,
+            releaseAssetName: releaseAssetName
+        )
         let script = """
         set -eu
         TMPDIR="$(mktemp -d)"
@@ -186,11 +189,11 @@ final class HostAgentInstaller {
 
         mkdir -p "$HOME/.local/bin"
         if ! download \(shellQuote(url)) "$TMPDIR/host-agent.tgz"; then
-          echo "failed to download host-agent archive from \(shellQuote(url)) (release_tag=\(shellQuote(releaseTag)), asset=\(shellQuote(releaseAssetName)))" >&2
+          echo "failed to download host-agent archive from \(shellQuote(url)) (release_selector=\(shellQuote(releaseSelector)), asset=\(shellQuote(releaseAssetName)))" >&2
           exit 1
         fi
         if [ ! -s "$TMPDIR/host-agent.tgz" ]; then
-          echo "host-agent archive download produced empty file (release_tag=\(shellQuote(releaseTag)), asset=\(shellQuote(releaseAssetName)))" >&2
+          echo "host-agent archive download produced empty file (release_selector=\(shellQuote(releaseSelector)), asset=\(shellQuote(releaseAssetName)))" >&2
           exit 1
         fi
         tar -xzf "$TMPDIR/host-agent.tgz" -C "$TMPDIR"
@@ -214,7 +217,7 @@ final class HostAgentInstaller {
         } catch {
             throw mapInstallFailure(
                 error,
-                releaseTag: releaseTag,
+                releaseSelector: releaseSelector,
                 releaseAssetName: releaseAssetName,
                 url: url
             )
@@ -549,24 +552,36 @@ final class HostAgentInstaller {
         return "/bin/sh -c \(shellQuote(script))"
     }
 
-    private func requireHostAgentReleaseTag() throws -> String {
+    private func requireHostAgentReleaseSelector() throws -> String {
         let value = runtimeConfig.hostAgentReleaseTag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, !value.contains("$(") else {
             throw APIError.serverError(
-                "Host-agent release tag is not configured. Set Info.plist HostAgentReleaseTag to a concrete release tag (for example v1.0.19)."
+                "Host-agent release selector is not configured. Set Info.plist HostAgentReleaseTag to 'latest' or a concrete version tag (for example v1.0.20)."
             )
         }
+
+        if value == "latest" {
+            return value
+        }
+
         guard value.first == "v" else {
             throw APIError.serverError(
-                "Host-agent release tag must start with 'v' (current: \(value))."
+                "Host-agent release selector must be 'latest' or start with 'v' (current: \(value))."
             )
         }
         return value
     }
 
+    private func hostAgentReleaseDownloadURL(releaseSelector: String, releaseAssetName: String) -> String {
+        if releaseSelector == "latest" {
+            return "https://github.com/allenneverland/tmux-chat/releases/latest/download/\(releaseAssetName)"
+        }
+        return "https://github.com/allenneverland/tmux-chat/releases/download/\(releaseSelector)/\(releaseAssetName)"
+    }
+
     private func mapInstallFailure(
         _ error: Error,
-        releaseTag: String,
+        releaseSelector: String,
         releaseAssetName: String,
         url: String
     ) -> Error {
@@ -580,7 +595,7 @@ final class HostAgentInstaller {
             || lowercased.contains(" 404 ")
         if is404 {
             return APIError.serverError(
-                "Host-agent release asset not found (release_tag=\(releaseTag), asset=\(releaseAssetName)). Verify the GitHub release exists and update Info.plist HostAgentReleaseTag if needed. URL: \(url)"
+                "Host-agent release asset not found (release_selector=\(releaseSelector), asset=\(releaseAssetName)). Verify the GitHub release selector and assets exist, then update Info.plist HostAgentReleaseTag if needed. URL: \(url)"
             )
         }
 
@@ -599,25 +614,25 @@ final class HostAgentInstaller {
 
     private func assertStatusCompatibility(_ status: HostAgentStatusResponse) throws {
         let requiredSchema = try requiredHostAgentStatusSchemaVersion()
-        let releaseTag = try requireHostAgentReleaseTag()
+        let releaseSelector = try requireHostAgentReleaseSelector()
         let remoteVersion = status.version ?? "unknown"
         let remoteSchema = status.statusSchemaVersion.map { String($0) } ?? "unknown"
 
         guard status.daemon == "host-agent" else {
             throw APIError.serverError(
-                "Host-agent status is incompatible (daemon=\(status.daemon ?? "unknown"), version=\(remoteVersion), required_schema=\(requiredSchema), release_tag=\(releaseTag))."
+                "Host-agent status is incompatible (daemon=\(status.daemon ?? "unknown"), version=\(remoteVersion), required_schema=\(requiredSchema), release_selector=\(releaseSelector))."
             )
         }
 
         guard let schema = status.statusSchemaVersion, schema >= requiredSchema else {
             throw APIError.serverError(
-                "Host-agent status schema is incompatible (remote_schema=\(remoteSchema), required_schema=\(requiredSchema), version=\(remoteVersion), release_tag=\(releaseTag))."
+                "Host-agent status schema is incompatible (remote_schema=\(remoteSchema), required_schema=\(requiredSchema), version=\(remoteVersion), release_selector=\(releaseSelector))."
             )
         }
 
         guard status.features?.bashAutoNotifyRuntimeProbe == true else {
             throw APIError.serverError(
-                "Host-agent is missing required feature bash_auto_notify_runtime_probe (schema=\(remoteSchema), version=\(remoteVersion), release_tag=\(releaseTag))."
+                "Host-agent is missing required feature bash_auto_notify_runtime_probe (schema=\(remoteSchema), version=\(remoteVersion), release_selector=\(releaseSelector))."
             )
         }
     }

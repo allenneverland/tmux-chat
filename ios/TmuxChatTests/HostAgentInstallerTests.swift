@@ -38,7 +38,7 @@ private final class FailingSSHExecutor: SSHCommandExecuting {
 
 struct HostAgentInstallerTests {
     private let runtimeConfig = HostAgentRuntimeConfig(
-        hostAgentReleaseTag: "v1.0.19",
+        hostAgentReleaseTag: "latest",
         requiredStatusSchemaVersion: 2
     )
 
@@ -159,7 +159,7 @@ struct HostAgentInstallerTests {
     }
 
     @Test
-    func installUsesPinnedHostAgentReleaseTag() async throws {
+    func installUsesLatestHostAgentReleaseSelector() async throws {
         let ssh = RecordingSSHExecutor()
         let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
         let connection = SSHConnectionSpec(
@@ -176,8 +176,32 @@ struct HostAgentInstallerTests {
         )
 
         let command = try #require(ssh.commands.first)
-        #expect(command.contains("/releases/download/v1.0.19/host-agent-linux-x86_64-musl.tar.gz"))
-        #expect(!command.contains("/releases/latest/download/"))
+        #expect(command.contains("/releases/latest/download/host-agent-linux-x86_64-musl.tar.gz"))
+    }
+
+    @Test
+    func installSupportsPinnedHostAgentReleaseSelector() async throws {
+        let ssh = RecordingSSHExecutor()
+        let pinnedConfig = HostAgentRuntimeConfig(
+            hostAgentReleaseTag: "v1.0.20",
+            requiredStatusSchemaVersion: 2
+        )
+        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: pinnedConfig)
+        let connection = SSHConnectionSpec(
+            host: "example-host",
+            port: 22,
+            username: "alice",
+            secret: .password("secret")
+        )
+
+        try await installer.install(
+            on: connection,
+            pushServerBaseURL: "https://push.example.com",
+            releaseAssetName: "host-agent-linux-x86_64-musl.tar.gz"
+        )
+
+        let command = try #require(ssh.commands.first)
+        #expect(command.contains("/releases/download/v1.0.20/host-agent-linux-x86_64-musl.tar.gz"))
     }
 
     @Test
@@ -203,7 +227,34 @@ struct HostAgentInstallerTests {
             message = error.localizedDescription
         }
         #expect(!message.isEmpty)
-        #expect(message.contains("release tag is not configured"))
+        #expect(message.contains("release selector is not configured"))
+        #expect(ssh.commands.isEmpty)
+    }
+
+    @Test
+    func installFailsWhenReleaseSelectorIsInvalid() async throws {
+        let ssh = RecordingSSHExecutor()
+        let badConfig = HostAgentRuntimeConfig(hostAgentReleaseTag: "stable", requiredStatusSchemaVersion: 2)
+        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: badConfig)
+        let connection = SSHConnectionSpec(
+            host: "example-host",
+            port: 22,
+            username: "alice",
+            secret: .password("secret")
+        )
+
+        var message = ""
+        do {
+            try await installer.install(
+                on: connection,
+                pushServerBaseURL: "https://push.example.com",
+                releaseAssetName: "host-agent-linux-x86_64-musl.tar.gz"
+            )
+        } catch {
+            message = error.localizedDescription
+        }
+        #expect(!message.isEmpty)
+        #expect(message.contains("must be 'latest' or start with 'v'"))
         #expect(ssh.commands.isEmpty)
     }
 
@@ -211,7 +262,7 @@ struct HostAgentInstallerTests {
     func installReportsReleaseAssetNotFoundWhenDownloadReturns404() async throws {
         let stderr = """
         curl: (22) The requested URL returned error: 404
-        failed to download host-agent archive from 'https://github.com/allenneverland/tmux-chat/releases/download/v1.0.19/host-agent-linux-x86_64-musl.tar.gz'
+        failed to download host-agent archive from 'https://github.com/allenneverland/tmux-chat/releases/latest/download/host-agent-linux-x86_64-musl.tar.gz'
         """
         let ssh = FailingSSHExecutor(
             error: SSHCommandExecutorError.commandFailed(exitCode: 1, stderr: stderr)
@@ -237,7 +288,7 @@ struct HostAgentInstallerTests {
 
         #expect(!message.isEmpty)
         #expect(message.contains("release asset not found"))
-        #expect(message.contains("release_tag=v1.0.19"))
+        #expect(message.contains("release_selector=latest"))
         #expect(message.contains("host-agent-linux-x86_64-musl.tar.gz"))
     }
 }

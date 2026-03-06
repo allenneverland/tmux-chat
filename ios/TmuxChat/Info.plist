@@ -5,7 +5,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>HostAgentReleaseTag</key>
-	<string>v1.0.20</string>
+	<string>latest</string>
 	<key>HostAgentRequiredStatusSchemaVersion</key>
 	<integer>2</integer>
 	<key>PushServerBaseURL</key>

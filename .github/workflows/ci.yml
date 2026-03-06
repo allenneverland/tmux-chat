@@ -19,20 +19,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Ensure host-agent release is pinned
+      - name: Ensure host-agent release selector is valid
         run: |
           set -euo pipefail
-          if grep -n "releases/latest/download/.*host-agent" ios/TmuxChat/Services/HostAgentInstaller.swift; then
-            echo "HostAgentInstaller must not use releases/latest for host-agent."
-            exit 1
-          fi
           grep -n "<key>HostAgentReleaseTag</key>" ios/TmuxChat/Info.plist
           grep -n "<key>HostAgentRequiredStatusSchemaVersion</key>" ios/TmuxChat/Info.plist
 
-          release_tag="$(python3 -c 'import plistlib,sys; info=plistlib.load(open("ios/TmuxChat/Info.plist","rb")); tag=str(info.get("HostAgentReleaseTag","")).strip(); schema=info.get("HostAgentRequiredStatusSchemaVersion"); (not tag or "$(" in tag) and sys.exit("HostAgentReleaseTag must be a concrete version tag (for example v1.0.19)."); (not tag.startswith("v")) and sys.exit(f"HostAgentReleaseTag must start with v (current: {tag})."); (not isinstance(schema,int) or schema<=0) and sys.exit(f"HostAgentRequiredStatusSchemaVersion must be a positive integer (current: {schema!r})."); print(tag)')"
-          echo "Validated HostAgentReleaseTag=${release_tag}"
+          release_selector="$(python3 -c 'import plistlib,sys; info=plistlib.load(open("ios/TmuxChat/Info.plist","rb")); selector=str(info.get("HostAgentReleaseTag","")).strip(); schema=info.get("HostAgentRequiredStatusSchemaVersion"); (not selector or "$(" in selector) and sys.exit("HostAgentReleaseTag must be configured to latest or a concrete v* tag."); ((selector != "latest") and (not selector.startswith("v"))) and sys.exit(f"HostAgentReleaseTag must be latest or start with v (current: {selector})."); (not isinstance(schema,int) or schema<=0) and sys.exit(f"HostAgentRequiredStatusSchemaVersion must be a positive integer (current: {schema!r})."); print(selector)')"
+          echo "Validated HostAgentReleaseTag=${release_selector}"
 
-          api_url="https://api.github.com/repos/allenneverland/tmux-chat/releases/tags/${release_tag}"
+          if [ "$release_selector" = "latest" ]; then
+            api_url="https://api.github.com/repos/allenneverland/tmux-chat/releases/latest"
+          else
+            api_url="https://api.github.com/repos/allenneverland/tmux-chat/releases/tags/${release_selector}"
+          fi
           release_json="$(curl -fsSL -H "Accept: application/vnd.github+json" "$api_url")"
 
           required_assets=(
@@ -46,7 +46,7 @@ jobs:
             if echo "$release_json" | jq -e --arg asset "$asset" '.assets[]? | select(.name == $asset)' >/dev/null; then
               echo "Verified release asset: $asset"
             else
-              echo "::error::Missing required host-agent release asset '$asset' under tag '${release_tag}'."
+              echo "::error::Missing required host-agent release asset '$asset' for selector '${release_selector}' (api_url=${api_url})."
               missing=1
             fi
           done
