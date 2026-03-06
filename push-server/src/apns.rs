@@ -64,8 +64,7 @@ impl ApnsService {
         let mut invalid_device_ids = Vec::new();
 
         'send_each_device: for device in devices {
-            let title =
-                build_notification_title(&device.server_name, &event.title, event.source);
+            let title = build_notification_title(&device.server_name, &event.title, event.source);
             let builder = DefaultNotificationBuilder::new()
                 .set_title(&title)
                 .set_body(&event.body)
@@ -192,9 +191,8 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        build_custom_data_entries, build_notification_title, CUSTOM_KEY_BODY,
-        CUSTOM_KEY_DEVICE_ID, CUSTOM_KEY_EVENT_TS, CUSTOM_KEY_PANE_TARGET, CUSTOM_KEY_SOURCE,
-        CUSTOM_KEY_TITLE,
+        build_custom_data_entries, build_notification_title, CUSTOM_KEY_BODY, CUSTOM_KEY_DEVICE_ID,
+        CUSTOM_KEY_EVENT_TS, CUSTOM_KEY_PANE_TARGET, CUSTOM_KEY_SOURCE, CUSTOM_KEY_TITLE,
     };
     use crate::models::{ApnsEvent, DeviceRecord, EventSource};
 
@@ -287,11 +285,8 @@ mod tests {
 
     #[test]
     fn bell_title_does_not_include_server_name_prefix() {
-        let title = build_notification_title(
-            "srv",
-            "session=dev window=3 pane=1",
-            EventSource::Bell,
-        );
+        let title =
+            build_notification_title("srv", "session=dev window=3 pane=1", EventSource::Bell);
         assert_eq!(title, "session=dev window=3 pane=1");
     }
 }

@@ -91,15 +91,7 @@ mod tests {
     #[test]
     fn accepts_valid_tokens() {
         let valid = [
-            "Left",
-            "Up",
-            "C-c",
-            "M-Left",
-            "C-M-Left",
-            "F12",
-            "BSpace",
-            ".",
-            "C-.",
+            "Left", "Up", "C-c", "M-Left", "C-M-Left", "F12", "BSpace", ".", "C-.",
         ];
         for token in valid {
             assert!(key_token_is_valid(token), "expected valid token: {token}");
@@ -118,7 +110,10 @@ mod tests {
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         ];
         for token in invalid {
-            assert!(!key_token_is_valid(token), "expected invalid token: {token:?}");
+            assert!(
+                !key_token_is_valid(token),
+                "expected invalid token: {token:?}"
+            );
         }
     }
 }

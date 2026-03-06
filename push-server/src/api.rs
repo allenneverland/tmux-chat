@@ -276,8 +276,7 @@ fn format_bell_title(pane_target: Option<&str>) -> Option<String> {
     if session.is_empty() || window.is_empty() || pane.is_empty() {
         return None;
     }
-    if !window.chars().all(|ch| ch.is_ascii_digit())
-        || !pane.chars().all(|ch| ch.is_ascii_digit())
+    if !window.chars().all(|ch| ch.is_ascii_digit()) || !pane.chars().all(|ch| ch.is_ascii_digit())
     {
         return None;
     }
