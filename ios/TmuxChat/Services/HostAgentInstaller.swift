@@ -256,11 +256,11 @@ final class HostAgentInstaller {
           exit 1
         fi
 
-        listener_owner() {
+        listener_pid() {
           if command -v lsof >/dev/null 2>&1; then
             PID="$(lsof -nP -iTCP:8787 -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true)"
             if [ -n "$PID" ]; then
-              ps -o user= -p "$PID" 2>/dev/null | awk '{print $1}' | head -n 1
+              echo "$PID"
               return 0
             fi
           fi
@@ -268,7 +268,7 @@ final class HostAgentInstaller {
           if command -v ss >/dev/null 2>&1; then
             PID="$(ss -ltnp 2>/dev/null | awk '/:8787[[:space:]]/ { print }' | grep -Eo 'pid=[0-9]+' | head -n 1 | cut -d= -f2 || true)"
             if [ -n "$PID" ]; then
-              ps -o user= -p "$PID" 2>/dev/null | awk '{print $1}' | head -n 1
+              echo "$PID"
               return 0
             fi
           fi
@@ -276,18 +276,69 @@ final class HostAgentInstaller {
           return 0
         }
 
-        check_ready() {
-          if command -v curl >/dev/null 2>&1; then
-            CODE="$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8787/sessions || true)"
-            case "$CODE" in
-              200|401|403|404|405)
-                return 0
-                ;;
-            esac
-          elif command -v nc >/dev/null 2>&1; then
-            nc -z 127.0.0.1 8787 >/dev/null 2>&1 && return 0
+        listener_owner() {
+          PID="$(listener_pid || true)"
+          if [ -n "$PID" ]; then
+            ps -o user= -p "$PID" 2>/dev/null | awk '{print $1}' | head -n 1
           fi
-          return 1
+          return 0
+        }
+
+        listener_executable() {
+          PID="$(listener_pid || true)"
+          if [ -z "$PID" ]; then
+            return 0
+          fi
+          if [ -r "/proc/$PID/exe" ]; then
+            readlink "/proc/$PID/exe" 2>/dev/null || true
+            return 0
+          fi
+          ps -o command= -p "$PID" 2>/dev/null | awk '{print $1}' | head -n 1
+          return 0
+        }
+
+        read_capabilities() {
+          if ! command -v curl >/dev/null 2>&1; then
+            return 1
+          fi
+          curl -fsS http://127.0.0.1:8787/capabilities 2>/dev/null
+        }
+
+        capabilities_contract_ok() {
+          CAPS_JSON="$(read_capabilities || true)"
+          [ -n "$CAPS_JSON" ] || return 1
+
+          if command -v jq >/dev/null 2>&1; then
+            echo "$CAPS_JSON" \
+              | jq -e '.capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null 2>&1
+            return $?
+          fi
+
+          echo "$CAPS_JSON" | grep -Eq '"capabilities_schema_version"[[:space:]]*:[[:space:]]*[3-9][0-9]*' || return 1
+          echo "$CAPS_JSON" | grep -Eq '"shortcut_keys"[[:space:]]*:[[:space:]]*true' || return 1
+          echo "$CAPS_JSON" | grep -Eq '"pane_key"[[:space:]]*:[[:space:]]*true' || return 1
+          echo "$CAPS_JSON" | grep -Eq '"pane_key_probe"[[:space:]]*:[[:space:]]*true' || return 1
+          return 0
+        }
+
+        capabilities_summary() {
+          CAPS_JSON="$(read_capabilities || true)"
+          if [ -z "$CAPS_JSON" ]; then
+            echo "capabilities=unavailable"
+            return 0
+          fi
+
+          if command -v jq >/dev/null 2>&1; then
+            SUMMARY="$(echo "$CAPS_JSON" | jq -r '"capabilities_schema_version=\\(.capabilities_schema_version // "nil"),shortcut_keys=\\(.features.shortcut_keys // "nil"),pane_key=\\(.endpoints.pane_key // "nil"),pane_key_probe=\\(.endpoints.pane_key_probe // "nil")"' 2>/dev/null || true)"
+            if [ -n "$SUMMARY" ]; then
+              echo "$SUMMARY"
+              return 0
+            fi
+          fi
+
+          ONE_LINE="$(printf "%s" "$CAPS_JSON" | tr '\n' ' ' | tr -s ' ')"
+          echo "capabilities_raw=$ONE_LINE"
+          return 0
         }
 
         OWNER="$(listener_owner || true)"
@@ -319,10 +370,10 @@ final class HostAgentInstaller {
             echo "[Install]"
             echo "WantedBy=default.target"
           } > "$HOME/.config/systemd/user/tmux-chatd.service"
-          systemctl --user daemon-reload || true
+          systemctl --user daemon-reload
           # Always restart so onboarding picks the newest binary/version.
-          systemctl --user enable --now tmux-chatd.service || true
-          systemctl --user restart tmux-chatd.service || true
+          systemctl --user enable --now tmux-chatd.service
+          systemctl --user restart tmux-chatd.service
         fi
 
         if [ "$USE_SYSTEMD" -eq 0 ]; then
@@ -346,14 +397,22 @@ final class HostAgentInstaller {
 
         ATTEMPT=0
         while [ "$ATTEMPT" -lt 20 ]; do
-          if check_ready; then
+          if capabilities_contract_ok; then
             exit 0
           fi
           ATTEMPT=$((ATTEMPT + 1))
           sleep 1
         done
 
-        echo "tmux-chatd is installed but not reachable on 127.0.0.1:8787. Check $LOG_DIR/tmux-chatd.log" >&2
+        PID="$(listener_pid || true)"
+        OWNER="$(listener_owner || true)"
+        EXE="$(listener_executable || true)"
+        SUMMARY="$(capabilities_summary || true)"
+        [ -n "$PID" ] || PID="none"
+        [ -n "$OWNER" ] || OWNER="unknown"
+        [ -n "$EXE" ] || EXE="unknown"
+        [ -n "$SUMMARY" ] || SUMMARY="capabilities=unavailable"
+        echo "tmux-chatd contract verification failed on 127.0.0.1:8787 (pid=$PID owner=$OWNER executable=$EXE $SUMMARY). Check $LOG_DIR/tmux-chatd.log and service status." >&2
         exit 1
         """
 

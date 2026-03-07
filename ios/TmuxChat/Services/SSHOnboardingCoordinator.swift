@@ -356,9 +356,15 @@ final class SSHOnboardingCoordinator {
         CAPS_JSON="$(curl -fsS "$BASE_URL/capabilities")"
 
         if command -v jq >/dev/null 2>&1; then
-          echo "$CAPS_JSON" \
-            | jq -e '.capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null \
-            || { echo "loopback_capabilities_contract_mismatch" >&2; exit 1; }
+          if ! echo "$CAPS_JSON" \
+            | jq -e '.capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null; then
+            SUMMARY="$(echo "$CAPS_JSON" | jq -r '"schema=\\(.capabilities_schema_version // "nil"),shortcut_keys=\\(.features.shortcut_keys // "nil"),pane_key=\\(.endpoints.pane_key // "nil"),pane_key_probe=\\(.endpoints.pane_key_probe // "nil")"' 2>/dev/null || true)"
+            if [ -z "$SUMMARY" ]; then
+              SUMMARY="$(printf "%s" "$CAPS_JSON" | tr '\n' ' ' | tr -s ' ')"
+            fi
+            echo "loopback_capabilities_contract_mismatch $SUMMARY" >&2
+            exit 1
+          fi
         else
           echo "$CAPS_JSON" | grep -Eq '"capabilities_schema_version"[[:space:]]*:[[:space:]]*[3-9][0-9]*' || { echo "loopback_capabilities_schema_too_old" >&2; exit 1; }
           echo "$CAPS_JSON" | grep -Eq '"shortcut_keys"[[:space:]]*:[[:space:]]*true' || { echo "loopback_capabilities_shortcut_keys_missing" >&2; exit 1; }

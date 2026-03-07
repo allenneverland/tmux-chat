@@ -213,6 +213,11 @@ extension DaemonCapabilitiesResponse {
 
 struct DaemonDiagnosticsResponse: Codable {
     let daemonUser: String
+    let daemonVersion: String?
+    let processPid: Int?
+    let processExecutable: String?
+    let buildTag: String?
+    let buildCommit: String?
     let tmuxBinary: String?
     let tmuxSocket: String?
     let sessionCount: Int
@@ -221,6 +226,11 @@ struct DaemonDiagnosticsResponse: Codable {
 
     enum CodingKeys: String, CodingKey {
         case daemonUser = "daemon_user"
+        case daemonVersion = "daemon_version"
+        case processPid = "process_pid"
+        case processExecutable = "process_executable"
+        case buildTag = "build_tag"
+        case buildCommit = "build_commit"
         case tmuxBinary = "tmux_binary"
         case tmuxSocket = "tmux_socket"
         case sessionCount = "session_count"

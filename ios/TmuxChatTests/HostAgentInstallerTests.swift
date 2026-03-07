@@ -254,4 +254,59 @@ struct HostAgentInstallerTests {
         #expect(ssh.commands.count == 1)
         #expect(ssh.commands.first?.contains("tmux-chatd.tgz") == true)
     }
+
+    @Test
+    func ensureTmuxChatdRunningUsesContractReadinessAndStrictSystemdCommands() async throws {
+        let ssh = RecordingSSHExecutor()
+        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
+        let connection = SSHConnectionSpec(
+            host: "example-host",
+            port: 22,
+            username: "alice",
+            secret: .password("secret")
+        )
+
+        try await installer.ensureTmuxChatdRunning(
+            on: connection,
+            executable: "/home/alice/.local/bin/tmux-chatd",
+            pushServerBaseURL: "https://push.example.com",
+            expectedUsername: "alice"
+        )
+
+        let command = try #require(ssh.commands.first)
+        #expect(command.contains("capabilities_contract_ok"))
+        #expect(command.contains("curl -fsS http://127.0.0.1:8787/capabilities"))
+        #expect(command.contains("pane_key_probe"))
+        #expect(command.contains("systemctl --user daemon-reload"))
+        #expect(command.contains("systemctl --user enable --now tmux-chatd.service"))
+        #expect(command.contains("systemctl --user restart tmux-chatd.service"))
+        #expect(!command.contains("systemctl --user daemon-reload || true"))
+        #expect(!command.contains("systemctl --user enable --now tmux-chatd.service || true"))
+        #expect(!command.contains("systemctl --user restart tmux-chatd.service || true"))
+    }
+
+    @Test
+    func ensureTmuxChatdRunningIncludesFailureDiagnosticsInScript() async throws {
+        let ssh = RecordingSSHExecutor()
+        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
+        let connection = SSHConnectionSpec(
+            host: "example-host",
+            port: 22,
+            username: "alice",
+            secret: .password("secret")
+        )
+
+        try await installer.ensureTmuxChatdRunning(
+            on: connection,
+            executable: "/home/alice/.local/bin/tmux-chatd",
+            pushServerBaseURL: "https://push.example.com",
+            expectedUsername: "alice"
+        )
+
+        let command = try #require(ssh.commands.first)
+        #expect(command.contains("listener_pid"))
+        #expect(command.contains("listener_executable"))
+        #expect(command.contains("capabilities_summary"))
+        #expect(command.contains("tmux-chatd contract verification failed on 127.0.0.1:8787"))
+    }
 }
