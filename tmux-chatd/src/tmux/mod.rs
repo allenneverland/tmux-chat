@@ -10,9 +10,7 @@ pub use create::create_session;
 pub use diagnostics::{collect_diagnostics, TmuxDiagnostics};
 pub use kill::kill_pane;
 pub use list::list_sessions;
-pub use send::{
-    send_escape, send_key, send_key_batch, send_keys, KeyDispatchError, KeyDispatchService,
-};
+pub use send::{send_escape, send_keys, KeyDispatchError, KeyDispatchService};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TmuxError {

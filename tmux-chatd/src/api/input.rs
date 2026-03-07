@@ -82,8 +82,9 @@ pub async fn send_key(
             error: "missing key payload".to_string(),
         }),
     ))?;
+    let Json(SendKeyRequest { key }) = payload;
 
-    if !key_token_is_valid(&payload.key) {
+    if !key_token_is_valid(&key) {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -93,7 +94,7 @@ pub async fn send_key(
         ));
     }
 
-    dispatch_single_key(dispatcher, target, payload.key).await
+    dispatch_single_key(dispatcher, target, key).await
 }
 
 pub async fn send_keys(
