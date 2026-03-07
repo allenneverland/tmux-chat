@@ -36,6 +36,7 @@ This migration removes legacy setup paths that caused product and operational dr
 - `GET /sessions`
 - `POST /sessions`
 - `POST /panes/{target}/input`
+- `POST /panes/{target}/key`
 - `POST /panes/{target}/escape`
 - `GET /panes/{target}/output`
 - `DELETE /panes/{target}`

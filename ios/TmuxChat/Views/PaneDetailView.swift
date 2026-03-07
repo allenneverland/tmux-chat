@@ -208,13 +208,28 @@ struct PaneDetailView: View {
 
             Divider()
 
-            ShortcutToolbarView(
-                isSending: viewModel.isSending,
-                pendingModifiers: pendingShortcutModifiers,
-                onKeyTapped: { item in
-                    sendShortcut(item)
+            if viewModel.canUseShortcutToolbar {
+                ShortcutToolbarView(
+                    isSending: viewModel.isSending,
+                    pendingModifiers: pendingShortcutModifiers,
+                    onKeyTapped: { item in
+                        sendShortcut(item)
+                    }
+                )
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "keyboard")
+                        .foregroundStyle(.secondary)
+                    Text(viewModel.shortcutStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer()
                 }
-            )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground))
+            }
             Divider()
 
             ZStack(alignment: .topTrailing) {
@@ -341,6 +356,33 @@ struct DetectedOption {
     let label: String
 }
 
+enum ShortcutEndpointState: Equatable {
+    case available
+    case unknownLegacy
+    case unsupportedByServer
+    case deploymentMismatch
+
+    var canUseToolbar: Bool {
+        switch self {
+        case .available, .unknownLegacy:
+            return true
+        case .unsupportedByServer, .deploymentMismatch:
+            return false
+        }
+    }
+
+    var statusMessage: String {
+        switch self {
+        case .available, .unknownLegacy:
+            return ""
+        case .unsupportedByServer:
+            return "This host does not expose shortcut-key support. Update tmux-chatd and reconnect."
+        case .deploymentMismatch:
+            return "Shortcut route mismatch detected. Verify reverse-proxy routing and active tmux-chatd binary."
+        }
+    }
+}
+
 enum QuickAction {
     case options([DetectedOption])
     case suggestions([String])
@@ -361,12 +403,23 @@ class PaneDetailViewModel {
     var errorMessage = ""
     var autoRefresh = true
     var quickAction: QuickAction = .none
+    var shortcutEndpointState: ShortcutEndpointState = .unknownLegacy
+
+    var canUseShortcutToolbar: Bool {
+        shortcutEndpointState.canUseToolbar
+    }
+
+    var shortcutStatusMessage: String {
+        shortcutEndpointState.statusMessage
+    }
 
     private let target: String
     private let api = TmuxChatAPI.shared
     @ObservationIgnored private var pollingTask: Task<Void, Never>?
     @ObservationIgnored private var rawOutput: String = ""
+    @ObservationIgnored private var shortcutSupportFromCapabilities: DaemonShortcutKeysSupport = .unknown
     @ObservationIgnored private var didReportUnsupportedKeyEndpoint = false
+    @ObservationIgnored private var didReportShortcutDeploymentMismatch = false
 
     init(target: String) {
         self.target = target
@@ -567,6 +620,34 @@ class PaneDetailViewModel {
         return result
     }
 
+    private func applyShortcutSupport(_ support: DaemonShortcutKeysSupport) {
+        shortcutSupportFromCapabilities = support
+        switch support {
+        case .supported:
+            shortcutEndpointState = .available
+        case .unsupported:
+            shortcutEndpointState = .unsupportedByServer
+        case .unknown:
+            shortcutEndpointState = .unknownLegacy
+        }
+    }
+
+    private func refreshShortcutCapability(forceRefresh: Bool = false) async {
+        do {
+            let capabilities = try await api.getCapabilities(forceRefresh: forceRefresh)
+            applyShortcutSupport(capabilities.shortcutKeysSupport)
+        } catch let error as APIError {
+            // Older deployments may not expose /capabilities; keep legacy behavior.
+            if case .httpError(let statusCode, let path, _) = error,
+               statusCode == 404,
+               path == "/capabilities" {
+                applyShortcutSupport(.unknown)
+            }
+        } catch {
+            // Keep current state on transient failures.
+        }
+    }
+
     func stopPolling() {
         pollingTask?.cancel()
         pollingTask = nil
@@ -574,6 +655,7 @@ class PaneDetailViewModel {
 
     func startPolling() async {
         stopPolling()
+        await refreshShortcutCapability()
         await refresh()
 
         pollingTask = Task {
@@ -670,11 +752,32 @@ class PaneDetailViewModel {
     }
 
     func sendKey(_ key: String) async -> Bool {
+        if shortcutEndpointState == .unsupportedByServer {
+            if !didReportUnsupportedKeyEndpoint {
+                didReportUnsupportedKeyEndpoint = true
+                errorMessage = shortcutStatusMessage
+                showError = true
+            }
+            return false
+        }
+
+        if shortcutEndpointState == .deploymentMismatch {
+            if !didReportShortcutDeploymentMismatch {
+                didReportShortcutDeploymentMismatch = true
+                errorMessage = shortcutStatusMessage
+                showError = true
+            }
+            return false
+        }
+
         isSending = true
         defer { isSending = false }
 
         do {
             try await api.sendKey(target: target, key: key)
+            if shortcutEndpointState == .unknownLegacy {
+                shortcutEndpointState = .available
+            }
             try? await Task.sleep(for: .milliseconds(150))
             await refreshSilently()
             return true
@@ -683,18 +786,33 @@ class PaneDetailViewModel {
             case .unauthorized:
                 errorMessage = "Server authentication expired. Reconnect and re-pair this server."
                 showError = true
-            case .serverError(let message):
-                if message == "HTTP 404" {
-                    if !didReportUnsupportedKeyEndpoint {
-                        didReportUnsupportedKeyEndpoint = true
-                        errorMessage = "This server version does not support shortcut keys yet. Upgrade tmux-chatd first."
-                        showError = true
+            case .httpError(let statusCode, let path, _):
+                if statusCode == 404 &&
+                    path.contains("/panes/") &&
+                    path.hasSuffix("/key") {
+                    if shortcutSupportFromCapabilities == .supported {
+                        shortcutEndpointState = .deploymentMismatch
+                        if !didReportShortcutDeploymentMismatch {
+                            didReportShortcutDeploymentMismatch = true
+                            errorMessage = "Shortcut route mismatch detected. Server claims support, but /panes/{target}/key returned 404. Verify reverse proxy routes and active tmux-chatd binary."
+                            showError = true
+                        }
+                    } else {
+                        shortcutEndpointState = .unsupportedByServer
+                        if !didReportUnsupportedKeyEndpoint {
+                            didReportUnsupportedKeyEndpoint = true
+                            errorMessage = "This tmux-chatd deployment does not expose shortcut keys yet. Upgrade tmux-chatd and reconnect."
+                            showError = true
+                        }
                     }
                 } else {
                     errorMessage = error.localizedDescription
                     showError = true
                 }
-            default:
+            case .serverError:
+                errorMessage = error.localizedDescription
+                showError = true
+            case .decodingError, .invalidURL, .networkError:
                 errorMessage = error.localizedDescription
                 showError = true
             }

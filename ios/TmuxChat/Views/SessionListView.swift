@@ -768,7 +768,7 @@ class SessionListViewModel {
     var errorMessage = ""
     var connectionState: ServerConnectionState = .checking
     var diagnostics: DaemonDiagnosticsResponse?
-    var hasValidatedCapabilities = false
+    var validatedCapabilitiesServerID: String?
 
     private let api = TmuxChatAPI.shared
 
@@ -777,8 +777,9 @@ class SessionListViewModel {
         defer { isLoading = false }
 
         do {
-            if !hasValidatedCapabilities {
-                let caps = try await api.getCapabilities()
+            let activeServerID = ServerConfigManager.shared.activeServer?.deviceId
+            if validatedCapabilitiesServerID != activeServerID {
+                let caps = try await api.getCapabilities(forceRefresh: true)
                 guard caps.endpoints.diagnostics else {
                     connectionState = .unsupportedServer(
                         "tmux-chatd \(caps.version) does not expose diagnostics. Upgrade host tmux-chatd to continue."
@@ -787,7 +788,7 @@ class SessionListViewModel {
                     sessions = []
                     return
                 }
-                hasValidatedCapabilities = true
+                validatedCapabilitiesServerID = activeServerID
             }
 
             sessions = try await api.listSessions()
@@ -832,7 +833,9 @@ class SessionListViewModel {
                 diagnostics = nil
                 return
             }
-            if case .serverError(let message) = error, message.contains("HTTP 404") {
+            if case .httpError(let statusCode, let path, _) = error,
+               statusCode == 404,
+               path == "/capabilities" || path == "/diagnostics" || path == "/sessions" {
                 connectionState = .unsupportedServer(
                     "Current host tmux-chatd is missing required endpoints (/capabilities or /diagnostics). Upgrade host tmux-chatd, then retry."
                 )

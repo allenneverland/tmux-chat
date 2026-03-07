@@ -137,7 +137,17 @@ struct OutputResponse: Codable {
 struct DaemonCapabilitiesResponse: Codable {
     let daemon: String
     let version: String
+    let capabilitiesSchemaVersion: Int?
+    let features: DaemonFeatureCapabilities?
     let endpoints: DaemonEndpointCapabilities
+
+    enum CodingKeys: String, CodingKey {
+        case daemon
+        case version
+        case capabilitiesSchemaVersion = "capabilities_schema_version"
+        case features
+        case endpoints
+    }
 }
 
 struct DaemonEndpointCapabilities: Codable {
@@ -146,7 +156,44 @@ struct DaemonEndpointCapabilities: Codable {
     let diagnostics: Bool
     let sessions: Bool
     let panes: Bool
+    let paneKey: Bool?
     let notify: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case healthz
+        case capabilities
+        case diagnostics
+        case sessions
+        case panes
+        case paneKey = "pane_key"
+        case notify
+    }
+}
+
+struct DaemonFeatureCapabilities: Codable {
+    let shortcutKeys: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case shortcutKeys = "shortcut_keys"
+    }
+}
+
+enum DaemonShortcutKeysSupport: Equatable {
+    case supported
+    case unsupported
+    case unknown
+}
+
+extension DaemonCapabilitiesResponse {
+    var shortcutKeysSupport: DaemonShortcutKeysSupport {
+        if let shortcutKeys = features?.shortcutKeys {
+            return shortcutKeys ? .supported : .unsupported
+        }
+        if let paneKey = endpoints.paneKey {
+            return paneKey ? .supported : .unsupported
+        }
+        return .unknown
+    }
 }
 
 struct DaemonDiagnosticsResponse: Codable {
