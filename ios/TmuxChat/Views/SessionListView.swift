@@ -290,25 +290,6 @@ struct SessionListView: View {
                         .padding(.vertical, 4)
                     }
                 }
-                if let diagnostics = viewModel.diagnostics {
-                    Section("Host Context") {
-                        HStack {
-                            Text("Daemon user")
-                            Spacer()
-                            Text(diagnostics.daemonUser)
-                                .foregroundStyle(.secondary)
-                        }
-                        if let socket = diagnostics.tmuxSocket, !socket.isEmpty {
-                            HStack {
-                                Text("tmux socket")
-                                Spacer()
-                                Text(socket)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                }
                 ForEach(viewModel.sessions) { session in
                     SessionSection(
                         session: session,
