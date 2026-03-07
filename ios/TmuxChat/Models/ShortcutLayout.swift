@@ -400,6 +400,34 @@ class ShortcutLayoutManager {
         save()
     }
 
+    func selectNextGroup() {
+        selectAdjacentGroup(step: 1)
+    }
+
+    func selectPreviousGroup() {
+        selectAdjacentGroup(step: -1)
+    }
+
+    private func selectAdjacentGroup(step: Int) {
+        let count = layout.groups.count
+        guard count > 1 else {
+            return
+        }
+
+        let selectedIndex: Int
+        if let selectedID = layout.selectedGroupID,
+           let index = layout.groups.firstIndex(where: { $0.id == selectedID }) {
+            selectedIndex = index
+        } else {
+            selectedIndex = 0
+        }
+
+        let normalizedStep = step >= 0 ? 1 : -1
+        let nextIndex = (selectedIndex + normalizedStep + count) % count
+        layout.selectedGroupID = layout.groups[nextIndex].id
+        save()
+    }
+
     func addGroup(named rawName: String?) {
         let trimmed = rawName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let candidate = trimmed.isEmpty ? "Group" : trimmed

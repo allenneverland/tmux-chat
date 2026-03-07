@@ -170,6 +170,52 @@ struct ShortcutLayoutTests {
     }
 
     @Test
+    func selectAdjacentGroupWrapsAtBounds() throws {
+        let suiteName = "ShortcutLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let storageKey = "shortcut.layout.tests"
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let manager = ShortcutLayoutManager(userDefaults: defaults, userDefaultsKey: storageKey)
+        let groups = manager.groups
+        #expect(groups.count >= 2)
+
+        let first = try #require(groups.first)
+        let last = try #require(groups.last)
+
+        manager.selectGroup(first.id)
+        manager.selectPreviousGroup()
+        #expect(manager.selectedGroupID == last.id)
+
+        manager.selectNextGroup()
+        #expect(manager.selectedGroupID == first.id)
+
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test
+    func selectAdjacentGroupDoesNothingForSingleGroup() throws {
+        let suiteName = "ShortcutLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let storageKey = "shortcut.layout.tests"
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let manager = ShortcutLayoutManager(userDefaults: defaults, userDefaultsKey: storageKey)
+        while manager.groups.count > 1 {
+            let id = try #require(manager.groups.last?.id)
+            manager.deleteGroup(id)
+        }
+
+        let selectedID = manager.selectedGroupID
+        manager.selectNextGroup()
+        #expect(manager.selectedGroupID == selectedID)
+        manager.selectPreviousGroup()
+        #expect(manager.selectedGroupID == selectedID)
+
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test
     func legacyKeyIDDecodesIntoShortcutItem() throws {
         let raw = """
         {

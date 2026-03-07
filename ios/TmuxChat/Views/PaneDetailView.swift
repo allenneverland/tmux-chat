@@ -130,7 +130,6 @@ struct PaneDetailView: View {
     @FocusState private var isInputFocused: Bool
     @State private var showCommandEditor = false
     @State private var showCommandPicker = false
-    @State private var shortcutToolbarCollapsed = true
 
     init(pane: Pane, windowName: String) {
         self.pane = pane
@@ -142,19 +141,8 @@ struct PaneDetailView: View {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !viewModel.isSending
     }
 
-    private var hasQuickAction: Bool {
-        switch viewModel.quickAction {
-        case .options, .suggestions, .yesNo:
-            return true
-        case .none:
-            return false
-        }
-    }
-
     private var commandButtonOffsetY: CGFloat {
-        let quickActionOffset: CGFloat = hasQuickAction ? -96 : -52
-        let shortcutOffset: CGFloat = shortcutToolbarCollapsed ? 0 : -48
-        return quickActionOffset + shortcutOffset
+        -100
     }
 
     private func sendMessage() {
@@ -211,89 +199,7 @@ struct PaneDetailView: View {
 
             Divider()
 
-            switch viewModel.quickAction {
-            case .options(let options):
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(options, id: \.number) { option in
-                            Button {
-                                Task {
-                                    await viewModel.sendInput(option.number)
-                                }
-                            } label: {
-                                Text("\(option.number). \(option.label)")
-                                    .font(.caption)
-                                    .lineLimit(1)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(.accentColor)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 6)
-                }
-                .background(.bar)
-                Divider()
-
-            case .yesNo:
-                HStack(spacing: 12) {
-                    Button {
-                        Task {
-                            await viewModel.sendInput("y")
-                        }
-                    } label: {
-                        Label("Yes", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.green)
-
-                    Button {
-                        Task {
-                            await viewModel.sendInput("n")
-                        }
-                    } label: {
-                        Label("No", systemImage: "xmark.circle.fill")
-                            .font(.subheadline)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .background(.bar)
-                Divider()
-
-            case .suggestions(let suggestions):
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(suggestions, id: \.self) { suggestion in
-                            Button {
-                                Task {
-                                    await viewModel.sendInput(suggestion)
-                                }
-                            } label: {
-                                Text(suggestion)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(.orange)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 6)
-                }
-                .background(.bar)
-                Divider()
-
-            case .none:
-                EmptyView()
-            }
-
             ShortcutToolbarView(
-                isCollapsed: $shortcutToolbarCollapsed,
                 isSending: viewModel.isSending,
                 onKeyTapped: { item in
                     sendShortcut(item)
@@ -339,7 +245,6 @@ struct PaneDetailView: View {
                     .disabled(!canSend)
                 }
                 .offset(x: -12, y: commandButtonOffsetY)
-                .animation(.easeInOut(duration: 0.2), value: commandButtonOffsetY)
             }
         }
         .navigationTitle(windowName)
