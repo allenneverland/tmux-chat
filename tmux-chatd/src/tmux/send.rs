@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    process::Command,
-    sync::Arc,
-};
+use std::{collections::HashMap, process::Command, sync::Arc};
 
 use tokio::{
     sync::{mpsc, oneshot, Mutex},
@@ -16,7 +12,11 @@ const MAX_BATCH_KEYS: usize = 32;
 const COALESCE_WINDOW: Duration = Duration::from_millis(8);
 
 fn run_send_keys<S: AsRef<str>>(target: &str, args: &[S]) -> Result<(), TmuxError> {
-    let mut full_args: Vec<String> = vec!["send-keys".to_string(), "-t".to_string(), target.to_string()];
+    let mut full_args: Vec<String> = vec![
+        "send-keys".to_string(),
+        "-t".to_string(),
+        target.to_string(),
+    ];
     for arg in args {
         full_args.push(arg.as_ref().to_string());
     }
@@ -95,7 +95,11 @@ impl KeyDispatchService {
         Self::new(DEFAULT_DISPATCH_QUEUE_CAPACITY)
     }
 
-    pub async fn dispatch_keys(&self, target: String, keys: Vec<String>) -> Result<(), KeyDispatchError> {
+    pub async fn dispatch_keys(
+        &self,
+        target: String,
+        keys: Vec<String>,
+    ) -> Result<(), KeyDispatchError> {
         if keys.is_empty() {
             return Ok(());
         }
@@ -114,7 +118,11 @@ impl KeyDispatchService {
         }
     }
 
-    pub async fn enqueue_keys(&self, target: String, keys: Vec<String>) -> Result<(), KeyDispatchError> {
+    pub async fn enqueue_keys(
+        &self,
+        target: String,
+        keys: Vec<String>,
+    ) -> Result<(), KeyDispatchError> {
         if keys.is_empty() {
             return Ok(());
         }
@@ -182,7 +190,8 @@ async fn run_target_dispatch_loop(target: String, mut rx: mpsc::Receiver<KeyDisp
             all_keys.extend(message.keys.iter().cloned());
         }
 
-        let dispatch_result = dispatch_key_chunks(&target, &all_keys).map_err(|error| error.to_string());
+        let dispatch_result =
+            dispatch_key_chunks(&target, &all_keys).map_err(|error| error.to_string());
         if let Err(error) = &dispatch_result {
             tracing::warn!(
                 target = %target,

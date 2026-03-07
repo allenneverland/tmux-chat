@@ -11,8 +11,7 @@ use axum::{
     middleware::{self, Next},
     response::Response,
     routing::{delete, get, post},
-    Extension,
-    Router,
+    Extension, Router,
 };
 use clap::{Parser, Subcommand};
 use serde::Serialize;
@@ -764,7 +763,8 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
         push_server_base_url,
         compat_notify_token,
     ));
-    let key_dispatcher: api::SharedKeyDispatchService = Arc::new(tmux::KeyDispatchService::default());
+    let key_dispatcher: api::SharedKeyDispatchService =
+        Arc::new(tmux::KeyDispatchService::default());
 
     let auth_for_middleware = auth_service.clone();
 

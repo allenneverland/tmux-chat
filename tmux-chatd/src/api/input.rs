@@ -205,8 +205,11 @@ async fn dispatch_single_key(
 mod tests {
     use std::sync::Arc;
 
-    use axum::{extract::{Path, Query}, Extension};
     use axum::http::Uri;
+    use axum::{
+        extract::{Path, Query},
+        Extension,
+    };
 
     use super::{key_token_is_valid, send_key, SendKeyQuery};
     use axum::http::StatusCode;
