@@ -11,6 +11,7 @@ use axum::{
     middleware::{self, Next},
     response::Response,
     routing::{delete, get, post},
+    Extension,
     Router,
 };
 use clap::{Parser, Subcommand};
@@ -763,6 +764,7 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
         push_server_base_url,
         compat_notify_token,
     ));
+    let key_dispatcher: api::SharedKeyDispatchService = Arc::new(tmux::KeyDispatchService::default());
 
     let auth_for_middleware = auth_service.clone();
 
@@ -774,8 +776,10 @@ async fn run_daemon(data_dir: std::path::PathBuf) {
         .route("/panes/{target}", delete(api::delete_pane))
         .route("/panes/{target}/input", post(api::send_input))
         .route("/panes/{target}/key", post(api::send_key))
+        .route("/panes/{target}/keys", post(api::send_keys))
         .route("/panes/{target}/escape", post(api::send_escape))
         .route("/panes/{target}/output", get(api::get_output))
+        .layer(Extension(key_dispatcher))
         .layer(middleware::from_fn_with_state(
             auth_for_middleware,
             auth_middleware,

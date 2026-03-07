@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use crate::tmux;
 
-const CAPABILITIES_SCHEMA_VERSION: u32 = 3;
+const CAPABILITIES_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Serialize)]
 pub struct HealthzResponse {
@@ -22,6 +22,7 @@ pub struct CapabilitiesResponse {
 #[derive(Serialize)]
 pub struct FeatureCapabilities {
     pub shortcut_keys: bool,
+    pub shortcut_key_batch: bool,
 }
 
 #[derive(Serialize)]
@@ -32,6 +33,7 @@ pub struct EndpointCapabilities {
     pub sessions: bool,
     pub panes: bool,
     pub pane_key: bool,
+    pub pane_keys: bool,
     pub pane_key_probe: bool,
     pub notify: bool,
 }
@@ -47,6 +49,7 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
         capabilities_schema_version: CAPABILITIES_SCHEMA_VERSION,
         features: FeatureCapabilities {
             shortcut_keys: true,
+            shortcut_key_batch: true,
         },
         endpoints: EndpointCapabilities {
             healthz: true,
@@ -55,6 +58,7 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
             sessions: true,
             panes: true,
             pane_key: true,
+            pane_keys: true,
             pane_key_probe: true,
             notify: true,
         },
@@ -74,9 +78,10 @@ mod tests {
         let payload = CapabilitiesResponse {
             daemon: "tmux-chatd",
             version: "1.0.22",
-            capabilities_schema_version: 3,
+            capabilities_schema_version: 4,
             features: FeatureCapabilities {
                 shortcut_keys: true,
+                shortcut_key_batch: true,
             },
             endpoints: EndpointCapabilities {
                 healthz: true,
@@ -85,6 +90,7 @@ mod tests {
                 sessions: true,
                 panes: true,
                 pane_key: true,
+                pane_keys: true,
                 pane_key_probe: true,
                 notify: true,
             },
@@ -95,7 +101,7 @@ mod tests {
             value
                 .get("capabilities_schema_version")
                 .and_then(|v| v.as_u64()),
-            Some(3)
+            Some(4)
         );
         assert_eq!(
             value
@@ -105,7 +111,19 @@ mod tests {
         );
         assert_eq!(
             value
+                .pointer("/features/shortcut_key_batch")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            value
                 .pointer("/endpoints/pane_key")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .pointer("/endpoints/pane_keys")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );

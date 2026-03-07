@@ -12,10 +12,39 @@ struct SSHCommandResult: Equatable {
     let exitCode: Int
 }
 
+enum SSHCommandTimeoutProfile: Equatable {
+    case quick
+    case standard
+    case long
+
+    var connectTimeout: TimeInterval {
+        switch self {
+        case .quick:
+            return 10
+        case .standard:
+            return 15
+        case .long:
+            return 20
+        }
+    }
+
+    var commandTimeout: TimeInterval {
+        switch self {
+        case .quick:
+            return 15
+        case .standard:
+            return 45
+        case .long:
+            return 180
+        }
+    }
+}
+
 enum SSHCommandExecutorError: LocalizedError {
     case sshLibraryUnavailable
     case connectionFailed(String)
     case commandFailed(exitCode: Int, stderr: String)
+    case commandTimedOut(command: String, timeout: TimeInterval)
     case unsupportedPrivateKeyFormat
     case encryptedPrivateKeyUnsupported
 
@@ -30,6 +59,9 @@ enum SSHCommandExecutorError: LocalizedError {
                 return "Remote command failed with exit code \(exitCode)"
             }
             return "Remote command failed (\(exitCode)): \(stderr)"
+        case .commandTimedOut(let command, let timeout):
+            return
+                "Remote command timed out after \(Int(timeout))s: \(command). Verify remote host performance and retry."
         case .unsupportedPrivateKeyFormat:
             return "Unsupported private key format. Supported formats: PEM-encoded ECDSA, or unencrypted OpenSSH Ed25519."
         case .encryptedPrivateKeyUnsupported:
@@ -39,7 +71,17 @@ enum SSHCommandExecutorError: LocalizedError {
 }
 
 protocol SSHCommandExecuting {
-    func run(command: String, on connection: SSHConnectionSpec) async throws -> SSHCommandResult
+    func run(
+        command: String,
+        on connection: SSHConnectionSpec,
+        timeoutProfile: SSHCommandTimeoutProfile
+    ) async throws -> SSHCommandResult
+}
+
+extension SSHCommandExecuting {
+    func run(command: String, on connection: SSHConnectionSpec) async throws -> SSHCommandResult {
+        try await run(command: command, on: connection, timeoutProfile: .standard)
+    }
 }
 
 #if canImport(SSHClient) && canImport(NIOSSH)
@@ -48,7 +90,11 @@ import NIOSSH
 import SSHClient
 
 final class SSHCommandExecutor: SSHCommandExecuting {
-    func run(command: String, on connection: SSHConnectionSpec) async throws -> SSHCommandResult {
+    func run(
+        command: String,
+        on connection: SSHConnectionSpec,
+        timeoutProfile: SSHCommandTimeoutProfile = .standard
+    ) async throws -> SSHCommandResult {
         let auth = try authentication(for: connection)
         let ssh = SSHConnection(
             host: connection.host,
@@ -57,8 +103,33 @@ final class SSHCommandExecutor: SSHCommandExecuting {
         )
 
         do {
-            try await ssh.start()
-            let response = try await ssh.execute(SSHCommand(command))
+            do {
+                try await ssh.start(withTimeout: timeoutProfile.connectTimeout)
+            } catch let error as SSHConnectionError {
+                throw SSHCommandExecutorError.connectionFailed(
+                    connectionDiagnostic(
+                        for: error,
+                        host: connection.host,
+                        port: connection.port,
+                        timeout: timeoutProfile.connectTimeout
+                    )
+                )
+            }
+
+            let response: SSHCommandResponse
+            do {
+                response = try await ssh.execute(
+                    SSHCommand(command),
+                    withTimeout: timeoutProfile.commandTimeout
+                )
+            } catch let error as SSHConnectionError {
+                throw commandError(
+                    for: error,
+                    command: command,
+                    timeout: timeoutProfile.commandTimeout
+                )
+            }
+
             await ssh.cancel()
             let stdout = String(data: response.standardOutput ?? Data(), encoding: .utf8) ?? ""
             let stderr = String(data: response.errorOutput ?? Data(), encoding: .utf8) ?? ""
@@ -78,7 +149,12 @@ final class SSHCommandExecutor: SSHCommandExecuting {
         } catch let error as SSHConnectionError {
             await ssh.cancel()
             throw SSHCommandExecutorError.connectionFailed(
-                connectionDiagnostic(for: error, host: connection.host, port: connection.port)
+                connectionDiagnostic(
+                    for: error,
+                    host: connection.host,
+                    port: connection.port,
+                    timeout: timeoutProfile.connectTimeout
+                )
             )
         } catch {
             await ssh.cancel()
@@ -105,15 +181,53 @@ final class SSHCommandExecutor: SSHCommandExecuting {
         }
     }
 
-    private func connectionDiagnostic(for error: SSHConnectionError, host: String, port: UInt16) -> String {
+    private func commandError(
+        for error: SSHConnectionError,
+        command: String,
+        timeout: TimeInterval
+    ) -> SSHCommandExecutorError {
+        let summary = summarize(command: command)
         switch error {
         case .timeout:
-            return "Timed out while connecting to \(host):\(port). Verify the host is reachable and SSH port is correct (usually 22)."
+            return .commandTimedOut(command: summary, timeout: timeout)
+        case .requireActiveConnection:
+            return .connectionFailed(
+                "SSH connection became inactive while running command: \(summary). Verify host stability and SSH session health."
+            )
+        case .unknown:
+            return .connectionFailed(
+                "SSH command execution failed unexpectedly: \(summary). Verify remote shell environment and retry."
+            )
+        }
+    }
+
+    private func connectionDiagnostic(
+        for error: SSHConnectionError,
+        host: String,
+        port: UInt16,
+        timeout: TimeInterval
+    ) -> String {
+        switch error {
+        case .timeout:
+            return
+                "Timed out while connecting to \(host):\(port) within \(Int(timeout))s. Verify the host is reachable and SSH port is correct (usually 22)."
         case .requireActiveConnection:
             return "SSH connection is not active. Verify host, port, username, and authentication settings."
         case .unknown:
             return "SSH handshake or authentication failed for \(host):\(port). Verify SSH host/port (usually 22), username, and key/password. If using Tailscale, ensure this device is connected to the same tailnet."
         }
+    }
+
+    private func summarize(command: String) -> String {
+        let collapsed = command
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard collapsed.count > 120 else {
+            return collapsed
+        }
+        let prefix = collapsed.prefix(117)
+        return "\(prefix)..."
     }
 }
 
@@ -151,9 +265,14 @@ private final class StaticPrivateKeyAuthDelegate: NIOSSHClientUserAuthentication
 }
 #else
 final class SSHCommandExecutor: SSHCommandExecuting {
-    func run(command: String, on connection: SSHConnectionSpec) async throws -> SSHCommandResult {
+    func run(
+        command: String,
+        on connection: SSHConnectionSpec,
+        timeoutProfile: SSHCommandTimeoutProfile = .standard
+    ) async throws -> SSHCommandResult {
         _ = command
         _ = connection
+        _ = timeoutProfile
         throw SSHCommandExecutorError.sshLibraryUnavailable
     }
 }

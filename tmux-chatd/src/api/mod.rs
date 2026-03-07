@@ -5,7 +5,7 @@ mod panes;
 mod sessions;
 mod system;
 
-pub use input::{send_escape, send_input, send_key};
+pub use input::{send_escape, send_input, send_key, send_keys, SharedKeyDispatchService};
 pub use notifications::{send_notification, NotifyForwarder, SharedNotifyForwarder};
 pub use output::get_output;
 pub use panes::delete_pane;

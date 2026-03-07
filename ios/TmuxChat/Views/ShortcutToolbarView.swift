@@ -4,7 +4,6 @@ import UIKit
 struct ShortcutToolbarView: View {
     @State private var layoutManager = ShortcutLayoutManager.shared
 
-    var isSending: Bool
     var pendingModifiers: Set<ShortcutModifier>
     var onKeyTapped: (ShortcutItem) -> Void
     private let swipeThreshold: CGFloat = 28
@@ -75,7 +74,6 @@ struct ShortcutToolbarView: View {
                                 )
                         }
                         .buttonStyle(.plain)
-                        .disabled(isSending)
                     }
                 }
             }

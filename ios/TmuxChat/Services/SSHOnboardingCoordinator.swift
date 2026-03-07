@@ -116,13 +116,18 @@ final class SSHOnboardingCoordinator {
             let connectionSpec = try makeConnectionSpec(from: input)
 
             step = .connectingSSH
-            _ = try await sshExecutor.run(command: "echo ssh-ok", on: connectionSpec)
+            _ = try await sshExecutor.run(
+                command: "echo ssh-ok",
+                on: connectionSpec,
+                timeoutProfile: .quick
+            )
             try await validateSSHUser(on: connectionSpec)
 
             step = .verifyingTmuxChatd
             _ = try await sshExecutor.run(
                 command: "/bin/sh -c \(shellQuote("command -v tmux-chatd >/dev/null 2>&1 || [ -x \"$HOME/.local/bin/tmux-chatd\" ] || true"))",
-                on: connectionSpec
+                on: connectionSpec,
+                timeoutProfile: .quick
             )
 
             step = .installingTmuxChatd
@@ -316,7 +321,11 @@ final class SSHOnboardingCoordinator {
     }
 
     private func validateSSHUser(on connection: SSHConnectionSpec) async throws {
-        let result = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote("id -un"))", on: connection)
+        let result = try await sshExecutor.run(
+            command: "/bin/sh -c \(shellQuote("id -un"))",
+            on: connection,
+            timeoutProfile: .quick
+        )
         let remoteUser = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !remoteUser.isEmpty else {
             throw APIError.serverError("Unable to determine remote SSH user")
@@ -334,7 +343,11 @@ final class SSHOnboardingCoordinator {
     ) async throws -> IssuedDeviceCredentials {
         let rawDeviceName = UIDevice.current.name
         let command = "\(shellQuote(tmuxChatdExecutable)) devices issue --name \(shellQuote(rawDeviceName)) --json"
-        let result = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(command))", on: connection)
+        let result = try await sshExecutor.run(
+            command: "/bin/sh -c \(shellQuote(command))",
+            on: connection,
+            timeoutProfile: .standard
+        )
         return try decodeJSONFromOutput(result.stdout, as: IssuedDeviceCredentials.self)
     }
 
@@ -384,7 +397,11 @@ final class SSHOnboardingCoordinator {
         """
 
         do {
-            _ = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
+            _ = try await sshExecutor.run(
+                command: "/bin/sh -c \(shellQuote(script))",
+                on: connection,
+                timeoutProfile: .standard
+            )
         } catch {
             throw mapLoopbackControlPlaneError(error)
         }

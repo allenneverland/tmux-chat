@@ -177,7 +177,50 @@ class TmuxChatAPI {
         if isDemoMode { return }
         let body = SendKeyRequest(key: key)
         let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
-        _ = try await request(path: "/panes/\(encodedTarget)/key", method: "POST", body: body)
+        _ = try await request(
+            path: "/panes/\(encodedTarget)/key",
+            method: "POST",
+            body: body,
+            timeoutSeconds: 2
+        )
+    }
+
+    func sendShortcutKeys(target: String, keys: [String], preferBatch: Bool) async throws {
+        if isDemoMode || keys.isEmpty { return }
+        let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
+
+        if preferBatch, keys.count > 1 {
+            let batchBody = SendKeysRequest(keys: keys)
+            do {
+                _ = try await request(
+                    path: "/panes/\(encodedTarget)/keys",
+                    method: "POST",
+                    body: batchBody,
+                    timeoutSeconds: 2
+                )
+                return
+            } catch let error as APIError {
+                if case .httpError(let statusCode, let path, _, _) = error,
+                   statusCode == 404,
+                   path.contains("/panes/"),
+                   path.hasSuffix("/keys") {
+                    // Fallback for hosts that have not deployed schema v4 batch endpoint yet.
+                } else {
+                    throw error
+                }
+            }
+        }
+
+        // Preserve ordering when falling back to single-key route.
+        for key in keys {
+            let body = SendKeyRequest(key: key)
+            _ = try await request(
+                path: "/panes/\(encodedTarget)/key",
+                method: "POST",
+                body: body,
+                timeoutSeconds: 2
+            )
+        }
     }
 
     func probeShortcutKeyEndpoint(target: String, server: ServerConfig? = nil) async throws {
@@ -347,7 +390,8 @@ class TmuxChatAPI {
         path: String,
         method: String,
         body: T? = nil,
-        bearerToken: String?
+        bearerToken: String?,
+        timeoutSeconds: TimeInterval? = nil
     ) async throws -> Data {
         guard let url = URL(string: pushServerBaseURL + path) else {
             throw APIError.invalidURL
@@ -356,6 +400,9 @@ class TmuxChatAPI {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let timeoutSeconds {
+            request.timeoutInterval = timeoutSeconds
+        }
         if let bearerToken {
             request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         }
@@ -400,7 +447,8 @@ class TmuxChatAPI {
         path: String,
         method: String,
         body: T? = nil,
-        server: ServerConfig? = nil
+        server: ServerConfig? = nil,
+        timeoutSeconds: TimeInterval? = nil
     ) async throws -> Data {
         let targetServer = server ?? ServerConfigManager.shared.activeServer
         guard let url = makeControlPlaneURL(path: path, server: targetServer) else {
@@ -410,6 +458,9 @@ class TmuxChatAPI {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let timeoutSeconds {
+            request.timeoutInterval = timeoutSeconds
+        }
 
         if let token = targetServer?.controlToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -537,17 +588,17 @@ class TmuxChatAPI {
 
     private func request(path: String, method: String) async throws -> Data {
         let empty: String? = nil
-        return try await request(path: path, method: method, body: empty)
+        return try await request(path: path, method: method, body: empty, timeoutSeconds: nil)
     }
 
     private func request(path: String, method: String, server: ServerConfig) async throws -> Data {
         let empty: String? = nil
-        return try await request(path: path, method: method, body: empty, server: server)
+        return try await request(path: path, method: method, body: empty, server: server, timeoutSeconds: nil)
     }
 
     private func request(path: String, method: String, server: ServerConfig?) async throws -> Data {
         let empty: String? = nil
-        return try await request(path: path, method: method, body: empty, server: server)
+        return try await request(path: path, method: method, body: empty, server: server, timeoutSeconds: nil)
     }
 }
 
@@ -556,8 +607,8 @@ extension TmuxChatAPI {
     static let demoCapabilities = DaemonCapabilitiesResponse(
         daemon: "tmux-chatd",
         version: "demo",
-        capabilitiesSchemaVersion: 3,
-        features: DaemonFeatureCapabilities(shortcutKeys: true),
+        capabilitiesSchemaVersion: 4,
+        features: DaemonFeatureCapabilities(shortcutKeys: true, shortcutKeyBatch: true),
         endpoints: DaemonEndpointCapabilities(
             healthz: true,
             capabilities: true,
@@ -565,6 +616,7 @@ extension TmuxChatAPI {
             sessions: true,
             panes: true,
             paneKey: true,
+            paneKeys: true,
             paneKeyProbe: true,
             notify: true
         )

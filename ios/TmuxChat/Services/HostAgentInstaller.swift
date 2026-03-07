@@ -105,7 +105,8 @@ final class HostAgentInstaller {
     func detectPlatform(on connection: SSHConnectionSpec) async throws -> HostAgentPlatform {
         let result = try await sshExecutor.run(
             command: "uname -s && uname -m",
-            on: connection
+            on: connection,
+            timeoutProfile: .standard
         )
         let values = result.stdout
             .split(whereSeparator: \.isNewline)
@@ -186,7 +187,11 @@ final class HostAgentInstaller {
         """
 
         do {
-            _ = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
+            _ = try await sshExecutor.run(
+                command: "/bin/sh -c \(shellQuote(script))",
+                on: connection,
+                timeoutProfile: .long
+            )
         } catch {
             throw mapInstallFailure(
                 error,
@@ -205,13 +210,21 @@ final class HostAgentInstaller {
         let command = hostAgentCommand(
             "pair --token \(shellQuote(pairingToken)) --push-server-base-url \(shellQuote(pushServerBaseURL)) --json"
         )
-        let result = try await sshExecutor.run(command: command, on: connection)
+        let result = try await sshExecutor.run(
+            command: command,
+            on: connection,
+            timeoutProfile: .long
+        )
         return result.stdout
     }
 
     func verifyHostAgentReadiness(on connection: SSHConnectionSpec) async throws {
         let command = hostAgentCommand("status --json")
-        let result = try await sshExecutor.run(command: command, on: connection)
+        let result = try await sshExecutor.run(
+            command: command,
+            on: connection,
+            timeoutProfile: .standard
+        )
         let status = try decodeJSONFromOutput(result.stdout, as: HostAgentStatusResponse.self)
         try assertStatusCompatibility(status)
 
@@ -252,8 +265,13 @@ final class HostAgentInstaller {
         mkdir -p "$LOG_DIR"
 
         if [ "$CURRENT_USER" != "$EXPECTED_USER" ]; then
-          echo "SSH user mismatch: connected as $CURRENT_USER but expected $EXPECTED_USER" >&2
+          echo "reason=ssh_user_mismatch SSH user mismatch: connected as $CURRENT_USER but expected $EXPECTED_USER" >&2
           exit 1
+        fi
+
+        USE_SYSTEMD=0
+        if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+          USE_SYSTEMD=1
         fi
 
         listener_pid() {
@@ -297,6 +315,69 @@ final class HostAgentInstaller {
           return 0
         }
 
+        canonical_path() {
+          TARGET="$1"
+          if command -v readlink >/dev/null 2>&1; then
+            CANON="$(readlink -f "$TARGET" 2>/dev/null || true)"
+            if [ -n "$CANON" ]; then
+              echo "$CANON"
+              return 0
+            fi
+          fi
+          echo "$TARGET"
+          return 0
+        }
+
+        binary_identity_ok() {
+          EXE="$1"
+          [ -n "$EXE" ] || return 1
+          if printf "%s" "$EXE" | grep -Eq ' \\(deleted\\)$'; then
+            return 1
+          fi
+          EXE_CANON="$(canonical_path "$EXE")"
+          BIN_CANON="$(canonical_path "$BIN")"
+          [ "$EXE_CANON" = "$BIN_CANON" ]
+        }
+
+        read_healthz() {
+          if ! command -v curl >/dev/null 2>&1; then
+            return 1
+          fi
+          curl -fsS http://127.0.0.1:8787/healthz 2>/dev/null
+        }
+
+        healthz_ok() {
+          HEALTHZ_JSON="$(read_healthz || true)"
+          [ -n "$HEALTHZ_JSON" ] || return 1
+
+          if command -v jq >/dev/null 2>&1; then
+            echo "$HEALTHZ_JSON" | jq -e '.status == "ok"' >/dev/null 2>&1
+            return $?
+          fi
+
+          echo "$HEALTHZ_JSON" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'
+        }
+
+        healthz_summary() {
+          HEALTHZ_JSON="$(read_healthz || true)"
+          if [ -z "$HEALTHZ_JSON" ]; then
+            echo "healthz_status=unavailable"
+            return 0
+          fi
+
+          if command -v jq >/dev/null 2>&1; then
+            STATUS="$(echo "$HEALTHZ_JSON" | jq -r '.status // "nil"' 2>/dev/null || true)"
+            if [ -n "$STATUS" ]; then
+              echo "healthz_status=$STATUS"
+              return 0
+            fi
+          fi
+
+          ONE_LINE="$(printf "%s" "$HEALTHZ_JSON" | tr '\n' ' ' | tr -s ' ')"
+          echo "healthz_raw=$ONE_LINE"
+          return 0
+        }
+
         read_capabilities() {
           if ! command -v curl >/dev/null 2>&1; then
             return 1
@@ -310,10 +391,11 @@ final class HostAgentInstaller {
 
           if command -v jq >/dev/null 2>&1; then
             echo "$CAPS_JSON" \
-              | jq -e '.capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null 2>&1
+              | jq -e '.daemon == "tmux-chatd" and .capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null 2>&1
             return $?
           fi
 
+          echo "$CAPS_JSON" | grep -Eq '"daemon"[[:space:]]*:[[:space:]]*"tmux-chatd"' || return 1
           echo "$CAPS_JSON" | grep -Eq '"capabilities_schema_version"[[:space:]]*:[[:space:]]*[3-9][0-9]*' || return 1
           echo "$CAPS_JSON" | grep -Eq '"shortcut_keys"[[:space:]]*:[[:space:]]*true' || return 1
           echo "$CAPS_JSON" | grep -Eq '"pane_key"[[:space:]]*:[[:space:]]*true' || return 1
@@ -329,7 +411,7 @@ final class HostAgentInstaller {
           fi
 
           if command -v jq >/dev/null 2>&1; then
-            SUMMARY="$(echo "$CAPS_JSON" | jq -r '"capabilities_schema_version=\\(.capabilities_schema_version // "nil"),shortcut_keys=\\(.features.shortcut_keys // "nil"),pane_key=\\(.endpoints.pane_key // "nil"),pane_key_probe=\\(.endpoints.pane_key_probe // "nil")"' 2>/dev/null || true)"
+            SUMMARY="$(echo "$CAPS_JSON" | jq -r '"daemon=\\(.daemon // "nil"),capabilities_schema_version=\\(.capabilities_schema_version // "nil"),shortcut_keys=\\(.features.shortcut_keys // "nil"),pane_key=\\(.endpoints.pane_key // "nil"),pane_key_probe=\\(.endpoints.pane_key_probe // "nil")"' 2>/dev/null || true)"
             if [ -n "$SUMMARY" ]; then
               echo "$SUMMARY"
               return 0
@@ -341,15 +423,85 @@ final class HostAgentInstaller {
           return 0
         }
 
-        OWNER="$(listener_owner || true)"
-        if [ -n "$OWNER" ] && [ "$OWNER" != "$CURRENT_USER" ]; then
-          echo "Port 8787 is already served by tmux-chatd user $OWNER, not $CURRENT_USER. Reconnect with SSH user $OWNER or stop the existing service first." >&2
-          exit 1
+        wait_for_port_release() {
+          ATTEMPT=0
+          while [ "$ATTEMPT" -lt 15 ]; do
+            PID="$(listener_pid || true)"
+            if [ -z "$PID" ]; then
+              return 0
+            fi
+            ATTEMPT=$((ATTEMPT + 1))
+            sleep 1
+          done
+          return 1
+        }
+
+        cleanup_existing_listener() {
+          REASON_HINT="$1"
+
+          if [ "$USE_SYSTEMD" -eq 1 ]; then
+            systemctl --user stop tmux-chatd.service >/dev/null 2>&1 || true
+            systemctl --user reset-failed tmux-chatd.service >/dev/null 2>&1 || true
+          fi
+
+          PID="$(listener_pid || true)"
+          if [ -n "$PID" ]; then
+            OWNER="$(listener_owner || true)"
+            if [ -n "$OWNER" ] && [ "$OWNER" != "$CURRENT_USER" ]; then
+              echo "reason=port_owned_by_other_user Port 8787 is already served by tmux-chatd user $OWNER, not $CURRENT_USER. Reconnect with SSH user $OWNER or stop the existing service first." >&2
+              return 1
+            fi
+            kill "$PID" 2>/dev/null || true
+            sleep 1
+            PID="$(listener_pid || true)"
+            if [ -n "$PID" ]; then
+              kill -9 "$PID" 2>/dev/null || true
+            fi
+          fi
+
+          if command -v pgrep >/dev/null 2>&1; then
+            for PID in $(pgrep -x tmux-chatd 2>/dev/null || true); do
+              OWNER="$(ps -o user= -p "$PID" 2>/dev/null | awk '{print $1}' | head -n 1 || true)"
+              if [ -z "$OWNER" ] || [ "$OWNER" = "$CURRENT_USER" ]; then
+                kill "$PID" 2>/dev/null || true
+              fi
+            done
+          fi
+
+          if ! wait_for_port_release; then
+            echo "reason=stale_cleanup_failed tmux-chatd stale cleanup failed to release 127.0.0.1:8787 (reason_hint=$REASON_HINT)." >&2
+            return 1
+          fi
+
+          return 0
+        }
+
+        PID="$(listener_pid || true)"
+        if [ -n "$PID" ]; then
+          OWNER="$(listener_owner || true)"
+          if [ -n "$OWNER" ] && [ "$OWNER" != "$CURRENT_USER" ]; then
+            echo "reason=port_owned_by_other_user Port 8787 is already served by tmux-chatd user $OWNER, not $CURRENT_USER. Reconnect with SSH user $OWNER or stop the existing service first." >&2
+            exit 1
+          fi
+
+          EXE="$(listener_executable || true)"
+          PRECHECK_REASON=""
+          if printf "%s" "$EXE" | grep -Eq ' \\(deleted\\)$'; then
+            PRECHECK_REASON="stale_deleted_binary"
+          elif ! binary_identity_ok "$EXE"; then
+            PRECHECK_REASON="binary_identity_mismatch"
+          elif ! capabilities_contract_ok; then
+            PRECHECK_REASON="contract_mismatch"
+          fi
+
+          if [ -n "$PRECHECK_REASON" ]; then
+            if ! cleanup_existing_listener "$PRECHECK_REASON"; then
+              exit 1
+            fi
+          fi
         fi
 
-        USE_SYSTEMD=0
-        if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
-          USE_SYSTEMD=1
+        if [ "$USE_SYSTEMD" -eq 1 ]; then
           mkdir -p "$HOME/.config/systemd/user"
           {
             echo "[Unit]"
@@ -374,49 +526,61 @@ final class HostAgentInstaller {
           # Always restart so onboarding picks the newest binary/version.
           systemctl --user enable --now tmux-chatd.service
           systemctl --user restart tmux-chatd.service
-        fi
-
-        if [ "$USE_SYSTEMD" -eq 0 ]; then
-          if command -v pgrep >/dev/null 2>&1; then
-            PIDS="$(pgrep -x tmux-chatd || true)"
-          else
-            PIDS=""
-          fi
-          if [ -n "$PIDS" ]; then
-            kill $PIDS || true
-            sleep 1
-          fi
+        else
+          cleanup_existing_listener "pre_start_nosystemd" || true
           nohup "$BIN" > "$LOG_DIR/tmux-chatd.log" 2>&1 &
         fi
 
-        OWNER="$(listener_owner || true)"
-        if [ -n "$OWNER" ] && [ "$OWNER" != "$CURRENT_USER" ]; then
-          echo "tmux-chatd started as unexpected user $OWNER. Expected $CURRENT_USER." >&2
-          exit 1
-        fi
-
         ATTEMPT=0
-        while [ "$ATTEMPT" -lt 20 ]; do
-          if capabilities_contract_ok; then
+        FAILURE_REASON="unknown"
+        while [ "$ATTEMPT" -lt 30 ]; do
+          PID="$(listener_pid || true)"
+          OWNER="$(listener_owner || true)"
+          EXE="$(listener_executable || true)"
+
+          if [ -n "$OWNER" ] && [ "$OWNER" != "$CURRENT_USER" ]; then
+            FAILURE_REASON="port_owned_by_other_user"
+          elif [ -z "$PID" ]; then
+            FAILURE_REASON="listener_unavailable"
+          elif printf "%s" "$EXE" | grep -Eq ' \\(deleted\\)$'; then
+            FAILURE_REASON="stale_deleted_binary"
+          elif ! binary_identity_ok "$EXE"; then
+            FAILURE_REASON="binary_identity_mismatch"
+          elif ! healthz_ok; then
+            FAILURE_REASON="healthz_unreachable"
+          elif ! capabilities_contract_ok; then
+            FAILURE_REASON="contract_mismatch"
+          else
             exit 0
           fi
+
           ATTEMPT=$((ATTEMPT + 1))
           sleep 1
         done
 
-        PID="$(listener_pid || true)"
-        OWNER="$(listener_owner || true)"
-        EXE="$(listener_executable || true)"
+        PID="${PID:-$(listener_pid || true)}"
+        OWNER="${OWNER:-$(listener_owner || true)}"
+        EXE="${EXE:-$(listener_executable || true)}"
+        HEALTHZ="$(healthz_summary || true)"
         SUMMARY="$(capabilities_summary || true)"
         [ -n "$PID" ] || PID="none"
         [ -n "$OWNER" ] || OWNER="unknown"
         [ -n "$EXE" ] || EXE="unknown"
+        [ -n "$HEALTHZ" ] || HEALTHZ="healthz_status=unavailable"
         [ -n "$SUMMARY" ] || SUMMARY="capabilities=unavailable"
-        echo "tmux-chatd contract verification failed on 127.0.0.1:8787 (pid=$PID owner=$OWNER executable=$EXE $SUMMARY). Check $LOG_DIR/tmux-chatd.log and service status." >&2
+        echo "reason=$FAILURE_REASON tmux-chatd contract verification failed on 127.0.0.1:8787 (pid=$PID owner=$OWNER executable=$EXE $HEALTHZ $SUMMARY). Check $LOG_DIR/tmux-chatd.log and service status." >&2
         exit 1
         """
 
-        _ = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
+        do {
+            _ = try await sshExecutor.run(
+                command: "/bin/sh -c \(shellQuote(script))",
+                on: connection,
+                timeoutProfile: .long
+            )
+        } catch {
+            throw mapTmuxChatdStartFailure(error)
+        }
     }
 
     private func detectTmuxChatdExecutable(on connection: SSHConnectionSpec) async throws -> String? {
@@ -429,7 +593,11 @@ final class HostAgentInstaller {
         exit 0
         """
 
-        let result = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
+        let result = try await sshExecutor.run(
+            command: "/bin/sh -c \(shellQuote(script))",
+            on: connection,
+            timeoutProfile: .quick
+        )
         let executable = result.stdout
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return executable.isEmpty ? nil : executable
@@ -536,7 +704,11 @@ final class HostAgentInstaller {
         "$HOME/.local/bin/tmux-chatd" --version >/dev/null 2>&1
         """
 
-        _ = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
+        _ = try await sshExecutor.run(
+            command: "/bin/sh -c \(shellQuote(script))",
+            on: connection,
+            timeoutProfile: .long
+        )
     }
 
     private func shellQuote(_ value: String) -> String {
@@ -632,6 +804,52 @@ final class HostAgentInstaller {
         return APIError.serverError(
             "tmux-chatd latest install/upgrade failed; onboarding stops until host tmux-chatd is upgraded. Details: \(details)"
         )
+    }
+
+    private func mapTmuxChatdStartFailure(_ error: Error) -> Error {
+        guard case .commandFailed(_, let stderr) = error as? SSHCommandExecutorError else {
+            return error
+        }
+
+        let details = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !details.isEmpty else {
+            return error
+        }
+
+        if details.contains("reason=port_owned_by_other_user") {
+            return APIError.serverError(
+                "Port 8787 is already served by a different SSH user. Reconnect with that SSH user or stop the existing tmux-chatd service. Details: \(details)"
+            )
+        }
+
+        if details.contains("reason=ssh_user_mismatch") {
+            return APIError.serverError(
+                "SSH user mismatch while starting tmux-chatd. Verify the configured username and reconnect. Details: \(details)"
+            )
+        }
+
+        if details.contains("reason=stale_cleanup_failed")
+            || details.contains("reason=stale_deleted_binary")
+            || details.contains("reason=binary_identity_mismatch")
+        {
+            return APIError.serverError(
+                "tmux-chatd stale listener cleanup/restart did not converge to the expected binary identity. Details: \(details)"
+            )
+        }
+
+        if details.contains("reason=healthz_unreachable") {
+            return APIError.serverError(
+                "tmux-chatd started but /healthz did not become reachable on 127.0.0.1:8787. Details: \(details)"
+            )
+        }
+
+        if details.contains("reason=contract_mismatch") {
+            return APIError.serverError(
+                "tmux-chatd is reachable but does not satisfy the required control-plane contract. Details: \(details)"
+            )
+        }
+
+        return error
     }
 
     private func requiredHostAgentStatusSchemaVersion() throws -> Int {

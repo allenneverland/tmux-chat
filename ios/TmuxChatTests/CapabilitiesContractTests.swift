@@ -84,4 +84,37 @@ struct CapabilitiesContractTests {
         #expect(caps.supportsRequiredShortcutContract == false)
         #expect(caps.shortcutKeysSupport == .unsupported)
     }
+
+    @Test
+    func decodesSchemaV4BatchShortcutFeatures() throws {
+        let raw = """
+        {
+          "daemon": "tmux-chatd",
+          "version": "1.0.30",
+          "capabilities_schema_version": 4,
+          "features": {
+            "shortcut_keys": true,
+            "shortcut_key_batch": true
+          },
+          "endpoints": {
+            "healthz": true,
+            "capabilities": true,
+            "diagnostics": true,
+            "sessions": true,
+            "panes": true,
+            "pane_key": true,
+            "pane_keys": true,
+            "pane_key_probe": true,
+            "notify": true
+          }
+        }
+        """
+
+        let caps = try JSONDecoder().decode(DaemonCapabilitiesResponse.self, from: Data(raw.utf8))
+        #expect(caps.capabilitiesSchemaVersion == 4)
+        #expect(caps.features?.shortcutKeyBatch == true)
+        #expect(caps.endpoints.paneKeys == true)
+        #expect(caps.supportsRequiredShortcutContract == true)
+        #expect(caps.supportsShortcutBatchContract == true)
+    }
 }

@@ -53,6 +53,10 @@ struct SendKeyRequest: Codable {
     let key: String
 }
 
+struct SendKeysRequest: Codable {
+    let keys: [String]
+}
+
 struct RegisterDeviceRequest: Codable {
     let token: String
     let sandbox: Bool
@@ -157,6 +161,7 @@ struct DaemonEndpointCapabilities: Codable {
     let sessions: Bool
     let panes: Bool
     let paneKey: Bool?
+    let paneKeys: Bool?
     let paneKeyProbe: Bool?
     let notify: Bool
 
@@ -167,6 +172,7 @@ struct DaemonEndpointCapabilities: Codable {
         case sessions
         case panes
         case paneKey = "pane_key"
+        case paneKeys = "pane_keys"
         case paneKeyProbe = "pane_key_probe"
         case notify
     }
@@ -174,9 +180,11 @@ struct DaemonEndpointCapabilities: Codable {
 
 struct DaemonFeatureCapabilities: Codable {
     let shortcutKeys: Bool?
+    let shortcutKeyBatch: Bool?
 
     enum CodingKeys: String, CodingKey {
         case shortcutKeys = "shortcut_keys"
+        case shortcutKeyBatch = "shortcut_key_batch"
     }
 }
 
@@ -192,6 +200,13 @@ extension DaemonCapabilitiesResponse {
             features?.shortcutKeys == true &&
             endpoints.paneKey == true &&
             endpoints.paneKeyProbe == true
+    }
+
+    var supportsShortcutBatchContract: Bool {
+        (capabilitiesSchemaVersion ?? 0) >= 4 &&
+            features?.shortcutKeyBatch == true &&
+            endpoints.paneKeys == true &&
+            endpoints.paneKey == true
     }
 
     var shortcutKeysSupport: DaemonShortcutKeysSupport {

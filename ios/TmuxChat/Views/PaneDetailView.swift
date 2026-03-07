@@ -139,7 +139,7 @@ struct PaneDetailView: View {
     }
 
     private var canSend: Bool {
-        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !viewModel.isSending
+        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !viewModel.isSendingInput
     }
 
     private var commandButtonOffsetY: CGFloat {
@@ -148,7 +148,7 @@ struct PaneDetailView: View {
 
     private func sendMessage() {
         let message = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty, !viewModel.isSending else { return }
+        guard !message.isEmpty, !viewModel.isSendingInput else { return }
         inputText = ""
         isInputFocused = false
         Task {
@@ -157,7 +157,6 @@ struct PaneDetailView: View {
     }
 
     private func sendShortcut(_ item: ShortcutItem) {
-        guard !viewModel.isSending else { return }
         let resolution = ShortcutTapResolver.resolveTap(
             item: item,
             pendingModifiers: pendingShortcutModifiers
@@ -166,9 +165,7 @@ struct PaneDetailView: View {
         guard let token = resolution.tokenToSend else {
             return
         }
-        Task {
-            _ = await viewModel.sendKey(token)
-        }
+        viewModel.enqueueShortcut(token)
     }
 
     var body: some View {
@@ -181,27 +178,10 @@ struct PaneDetailView: View {
             .onChange(of: viewModel.contentVersion) {
                 scrollToBottom = true
             }
-            .onChange(of: viewModel.isSending) { _, isSending in
-                if !isSending {
+            .onChange(of: viewModel.isSendingInput) { _, isSendingInput in
+                if !isSendingInput {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         scrollToBottom = true
-                    }
-                }
-            }
-            .overlay {
-                if viewModel.isSending {
-                    ZStack {
-                        Color.black.opacity(0.3)
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                                .tint(.white)
-                            Text("Sending...")
-                                .font(.subheadline)
-                                .foregroundStyle(.white)
-                        }
-                        .padding(24)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     }
                 }
             }
@@ -210,7 +190,6 @@ struct PaneDetailView: View {
 
             if viewModel.canUseShortcutToolbar {
                 ShortcutToolbarView(
-                    isSending: viewModel.isSending,
                     pendingModifiers: pendingShortcutModifiers,
                     onKeyTapped: { item in
                         sendShortcut(item)
@@ -234,7 +213,7 @@ struct PaneDetailView: View {
 
             ZStack(alignment: .topTrailing) {
                 InputComposerView(text: $inputText, isFocused: $isInputFocused)
-                    .disabled(viewModel.isSending)
+                    .disabled(viewModel.isSendingInput)
                     .onSubmit {
                         sendMessage()
                     }
@@ -247,7 +226,7 @@ struct PaneDetailView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.purple)
                     }
-                    .disabled(viewModel.isSending)
+                    .disabled(viewModel.isSendingInput)
 
                     GlassButton {
                         Task {
@@ -258,7 +237,7 @@ struct PaneDetailView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.red)
                     }
-                    .disabled(viewModel.isSending)
+                    .disabled(viewModel.isSendingInput)
 
                     GlassButton {
                         sendMessage()
@@ -414,7 +393,7 @@ class PaneDetailViewModel {
     var output: NSAttributedString = NSAttributedString()
     var contentVersion: UUID = UUID()
     var isLoading = false
-    var isSending = false
+    var isSendingInput = false
     var showError = false
     var errorMessage = ""
     var autoRefresh = true
@@ -432,8 +411,13 @@ class PaneDetailViewModel {
     private let target: String
     private let api = TmuxChatAPI.shared
     @ObservationIgnored private var pollingTask: Task<Void, Never>?
+    @ObservationIgnored private var silentRefreshInFlight = false
+    @ObservationIgnored private var scheduledRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var rawOutput: String = ""
     @ObservationIgnored private var didReportShortcutUnavailable = false
+    @ObservationIgnored private var supportsShortcutBatch = false
+    @ObservationIgnored private var pendingShortcutKeys: [String] = []
+    @ObservationIgnored private var shortcutDispatchTask: Task<Void, Never>?
 
     init(target: String) {
         self.target = target
@@ -638,6 +622,8 @@ class PaneDetailViewModel {
         shortcutEndpointState = state
         if state == .available {
             didReportShortcutUnavailable = false
+        } else {
+            supportsShortcutBatch = false
         }
     }
 
@@ -689,6 +675,7 @@ class PaneDetailViewModel {
                 applyShortcutState(.unsupportedContract)
                 return
             }
+            supportsShortcutBatch = capabilities.supportsShortcutBatchContract
         } catch let error as APIError {
             applyShortcutState(mapShortcutCapabilityError(error))
             return
@@ -707,9 +694,111 @@ class PaneDetailViewModel {
         }
     }
 
+    private func scheduleSilentRefresh(after delay: Duration = .milliseconds(120)) {
+        if scheduledRefreshTask != nil {
+            return
+        }
+        scheduledRefreshTask = Task {
+            try? await Task.sleep(for: delay)
+            await refreshSilently()
+            scheduledRefreshTask = nil
+        }
+    }
+
+    private func nextShortcutBatch(maxBatchSize: Int = 16) -> [String] {
+        let count = min(maxBatchSize, pendingShortcutKeys.count)
+        guard count > 0 else { return [] }
+        let batch = Array(pendingShortcutKeys.prefix(count))
+        pendingShortcutKeys.removeFirst(count)
+        return batch
+    }
+
+    private func handleShortcutSendError(_ error: APIError) {
+        switch error {
+        case .unauthorized:
+            applyShortcutState(.unauthorized)
+            errorMessage = shortcutStatusMessage
+            showError = true
+        case .httpError(let statusCode, let path, _, _):
+            if statusCode == 404 &&
+                path.contains("/panes/") &&
+                (path.hasSuffix("/key") || path.hasSuffix("/keys")) {
+                applyShortcutState(.routeMismatch)
+                errorMessage = shortcutStatusMessage
+                showError = true
+            } else {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+        case .serverError:
+            errorMessage = error.localizedDescription
+            showError = true
+        case .networkError:
+            applyShortcutState(.unreachable)
+            errorMessage = shortcutStatusMessage
+            showError = true
+        case .decodingError, .invalidURL:
+            errorMessage = error.localizedDescription
+            showError = true
+        }
+    }
+
+    private func startShortcutDispatchLoopIfNeeded() {
+        if shortcutDispatchTask != nil {
+            return
+        }
+        shortcutDispatchTask = Task {
+            defer { shortcutDispatchTask = nil }
+            while !pendingShortcutKeys.isEmpty {
+                let batch = nextShortcutBatch()
+                guard !batch.isEmpty else { continue }
+                do {
+                    try await api.sendShortcutKeys(
+                        target: target,
+                        keys: batch,
+                        preferBatch: supportsShortcutBatch
+                    )
+                    scheduleSilentRefresh(after: .milliseconds(90))
+                } catch let error as APIError {
+                    pendingShortcutKeys.removeAll()
+                    handleShortcutSendError(error)
+                    return
+                } catch {
+                    pendingShortcutKeys.removeAll()
+                    errorMessage = error.localizedDescription
+                    showError = true
+                    return
+                }
+            }
+        }
+    }
+
+    func enqueueShortcut(_ key: String) {
+        if !shortcutEndpointState.canUseToolbar {
+            if !didReportShortcutUnavailable {
+                didReportShortcutUnavailable = true
+                errorMessage = shortcutStatusMessage
+                showError = true
+            }
+            return
+        }
+        if pendingShortcutKeys.count >= 256 {
+            errorMessage = "Shortcut queue is busy. Wait for previous keys to flush."
+            showError = true
+            return
+        }
+        pendingShortcutKeys.append(key)
+        startShortcutDispatchLoopIfNeeded()
+    }
+
     func stopPolling() {
         pollingTask?.cancel()
         pollingTask = nil
+        scheduledRefreshTask?.cancel()
+        scheduledRefreshTask = nil
+        shortcutDispatchTask?.cancel()
+        shortcutDispatchTask = nil
+        pendingShortcutKeys.removeAll()
     }
 
     func startPolling() async {
@@ -728,6 +817,9 @@ class PaneDetailViewModel {
     }
 
     private func refreshSilently() async {
+        guard !silentRefreshInFlight else { return }
+        silentRefreshInFlight = true
+        defer { silentRefreshInFlight = false }
         do {
             let newRawOutput = try await api.getOutput(target: target, lines: 500)
             guard newRawOutput != rawOutput else { return }
@@ -788,14 +880,13 @@ class PaneDetailViewModel {
     }
 
     func sendInput(_ text: String) async {
-        isSending = true
-        defer { isSending = false }
+        isSendingInput = true
+        defer { isSendingInput = false }
 
         do {
             try await api.sendInput(target: target, text: text)
             CommandHistoryManager.shared.add(text)
-            try? await Task.sleep(for: .milliseconds(300))
-            await refreshSilently()
+            scheduleSilentRefresh(after: .milliseconds(120))
         } catch let error as APIError {
             if case .unauthorized = error {
                 errorMessage = "Server authentication expired. Reconnect and re-pair this server."
@@ -810,68 +901,13 @@ class PaneDetailViewModel {
         }
     }
 
-    func sendKey(_ key: String) async -> Bool {
-        if !shortcutEndpointState.canUseToolbar {
-            if !didReportShortcutUnavailable {
-                didReportShortcutUnavailable = true
-                errorMessage = shortcutStatusMessage
-                showError = true
-            }
-            return false
-        }
-
-        isSending = true
-        defer { isSending = false }
-
-        do {
-            try await api.sendKey(target: target, key: key)
-            try? await Task.sleep(for: .milliseconds(150))
-            await refreshSilently()
-            return true
-        } catch let error as APIError {
-            switch error {
-            case .unauthorized:
-                applyShortcutState(.unauthorized)
-                errorMessage = shortcutStatusMessage
-                showError = true
-            case .httpError(let statusCode, let path, _, _):
-                if statusCode == 404 &&
-                    path.contains("/panes/") &&
-                    path.hasSuffix("/key") {
-                    applyShortcutState(.routeMismatch)
-                    errorMessage = shortcutStatusMessage
-                    showError = true
-                } else {
-                    errorMessage = error.localizedDescription
-                    showError = true
-                }
-            case .serverError:
-                errorMessage = error.localizedDescription
-                showError = true
-            case .networkError:
-                applyShortcutState(.unreachable)
-                errorMessage = shortcutStatusMessage
-                showError = true
-            case .decodingError, .invalidURL:
-                errorMessage = error.localizedDescription
-                showError = true
-            }
-            return false
-        } catch {
-            errorMessage = error.localizedDescription
-            showError = true
-            return false
-        }
-    }
-
     func sendEscape() async {
-        isSending = true
-        defer { isSending = false }
+        isSendingInput = true
+        defer { isSendingInput = false }
 
         do {
             try await api.sendEscape(target: target)
-            try? await Task.sleep(for: .milliseconds(300))
-            await refreshSilently()
+            scheduleSilentRefresh(after: .milliseconds(120))
         } catch let error as APIError {
             if case .unauthorized = error {
                 errorMessage = "Server authentication expired. Reconnect and re-pair this server."

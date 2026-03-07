@@ -1,11 +1,14 @@
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
-    Json,
+    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::tmux;
+
+pub type SharedKeyDispatchService = Arc<tmux::KeyDispatchService>;
 
 #[derive(Deserialize)]
 pub struct SendInputRequest {
@@ -15,6 +18,11 @@ pub struct SendInputRequest {
 #[derive(Deserialize)]
 pub struct SendKeyRequest {
     pub key: String,
+}
+
+#[derive(Deserialize)]
+pub struct SendKeysRequest {
+    pub keys: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -58,6 +66,7 @@ pub async fn send_input(
 }
 
 pub async fn send_key(
+    Extension(dispatcher): Extension<SharedKeyDispatchService>,
     Path(target): Path<String>,
     Query(query): Query<SendKeyQuery>,
     payload: Option<Json<SendKeyRequest>>,
@@ -84,13 +93,63 @@ pub async fn send_key(
         ));
     }
 
-    match tmux::send_key(&target, &payload.key) {
-        Ok(()) => Ok(StatusCode::OK),
-        Err(e) => Err((
+    dispatch_single_key(dispatcher, target, payload.key).await
+}
+
+pub async fn send_keys(
+    Extension(dispatcher): Extension<SharedKeyDispatchService>,
+    Path(target): Path<String>,
+    Json(payload): Json<SendKeysRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    if payload.keys.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                code: "missing_keys_payload",
+                error: "missing keys payload".to_string(),
+            }),
+        ));
+    }
+    if payload.keys.len() > 128 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                code: "too_many_keys",
+                error: "too many keys (max 128)".to_string(),
+            }),
+        ));
+    }
+    if payload.keys.iter().any(|token| !key_token_is_valid(token)) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                code: "invalid_key_token",
+                error: "invalid key token".to_string(),
+            }),
+        ));
+    }
+
+    match dispatcher.enqueue_keys(target, payload.keys).await {
+        Ok(()) => Ok(StatusCode::ACCEPTED),
+        Err(tmux::KeyDispatchError::QueueFull) => Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                code: "key_dispatch_queue_full",
+                error: "key dispatch queue is full".to_string(),
+            }),
+        )),
+        Err(tmux::KeyDispatchError::Unavailable) => Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                code: "key_dispatch_unavailable",
+                error: "key dispatch service unavailable".to_string(),
+            }),
+        )),
+        Err(tmux::KeyDispatchError::Tmux(error)) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
                 code: "tmux_error",
-                error: e.to_string(),
+                error,
             }),
         )),
     }
@@ -111,9 +170,42 @@ pub async fn send_escape(
     }
 }
 
+async fn dispatch_single_key(
+    dispatcher: SharedKeyDispatchService,
+    target: String,
+    key: String,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    match dispatcher.dispatch_keys(target, vec![key]).await {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(tmux::KeyDispatchError::QueueFull) => Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                code: "key_dispatch_queue_full",
+                error: "key dispatch queue is full".to_string(),
+            }),
+        )),
+        Err(tmux::KeyDispatchError::Unavailable) => Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                code: "key_dispatch_unavailable",
+                error: "key dispatch service unavailable".to_string(),
+            }),
+        )),
+        Err(tmux::KeyDispatchError::Tmux(error)) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                code: "tmux_error",
+                error,
+            }),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use axum::extract::{Path, Query};
+    use std::sync::Arc;
+
+    use axum::{extract::{Path, Query}, Extension};
     use axum::http::Uri;
 
     use super::{key_token_is_valid, send_key, SendKeyQuery};
@@ -150,7 +242,9 @@ mod tests {
 
     #[tokio::test]
     async fn probe_returns_no_content() {
+        let dispatcher = Arc::new(crate::tmux::KeyDispatchService::new(1));
         let result = send_key(
+            Extension(dispatcher),
             Path("dev:0.0".to_string()),
             Query(SendKeyQuery { probe: Some(true) }),
             None,
