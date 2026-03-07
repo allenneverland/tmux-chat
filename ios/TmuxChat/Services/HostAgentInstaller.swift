@@ -89,23 +89,14 @@ final class HostAgentInstaller {
     }
 
     func ensureTmuxChatdInstalled(on connection: SSHConnectionSpec) async throws -> String {
-        let existing = try await detectTmuxChatdExecutable(on: connection)
-
         do {
             try await installTmuxChatd(on: connection)
         } catch {
-            if let existing {
-                return existing
-            }
-            throw error
+            throw mapTmuxChatdInstallFailure(error)
         }
 
         if let executable = try await detectTmuxChatdExecutable(on: connection) {
             return executable
-        }
-
-        if let existing {
-            return existing
         }
 
         throw HostAgentInstallerError.missingTmuxChatd
@@ -553,6 +544,35 @@ final class HostAgentInstaller {
         }
 
         return error
+    }
+
+    private func mapTmuxChatdInstallFailure(_ error: Error) -> Error {
+        guard case .commandFailed(_, let stderr) = error as? SSHCommandExecutorError else {
+            return APIError.serverError(
+                "tmux-chatd latest install/upgrade failed; onboarding stops until host tmux-chatd is upgraded. Error: \(error.localizedDescription)"
+            )
+        }
+
+        let lowercased = stderr.lowercased()
+        let is404 = (lowercased.contains("curl: (22)") && lowercased.contains("404"))
+            || lowercased.contains("requested url returned error: 404")
+            || lowercased.contains(" 404 ")
+        if is404 {
+            return APIError.serverError(
+                "tmux-chatd release asset not found for this host platform while resolving latest release. Verify GitHub release assets, then retry onboarding."
+            )
+        }
+
+        let details = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if details.isEmpty {
+            return APIError.serverError(
+                "tmux-chatd latest install/upgrade failed; onboarding stops until host tmux-chatd is upgraded."
+            )
+        }
+
+        return APIError.serverError(
+            "tmux-chatd latest install/upgrade failed; onboarding stops until host tmux-chatd is upgraded. Details: \(details)"
+        )
     }
 
     private func requiredHostAgentStatusSchemaVersion() throws -> Int {

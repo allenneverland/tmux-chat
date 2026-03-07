@@ -36,6 +36,22 @@ private final class FailingSSHExecutor: SSHCommandExecuting {
     }
 }
 
+private final class TmuxChatdInstallFailingSSHExecutor: SSHCommandExecuting {
+    private(set) var commands: [String] = []
+
+    func run(command: String, on connection: SSHConnectionSpec) async throws -> SSHCommandResult {
+        _ = connection
+        commands.append(command)
+        if command.contains("tmux-chatd.tgz") {
+            throw SSHCommandExecutorError.commandFailed(
+                exitCode: 1,
+                stderr: "curl: (22) The requested URL returned error: 404"
+            )
+        }
+        return SSHCommandResult(command: command, stdout: "/usr/local/bin/tmux-chatd\n", stderr: "", exitCode: 0)
+    }
+}
+
 struct HostAgentInstallerTests {
     private let runtimeConfig = HostAgentRuntimeConfig(
         hostAgentReleaseTag: "latest",
@@ -213,5 +229,29 @@ struct HostAgentInstallerTests {
         #expect(message.contains("release asset not found"))
         #expect(message.contains("release_selector=latest"))
         #expect(message.contains("host-agent-linux-x86_64-musl.tar.gz"))
+    }
+
+    @Test
+    func ensureTmuxChatdInstalledFailsWhenLatestInstallFails() async throws {
+        let ssh = TmuxChatdInstallFailingSSHExecutor()
+        let installer = HostAgentInstaller(sshExecutor: ssh, runtimeConfig: runtimeConfig)
+        let connection = SSHConnectionSpec(
+            host: "example-host",
+            port: 22,
+            username: "alice",
+            secret: .password("secret")
+        )
+
+        var message = ""
+        do {
+            _ = try await installer.ensureTmuxChatdInstalled(on: connection)
+        } catch {
+            message = error.localizedDescription
+        }
+
+        #expect(!message.isEmpty)
+        #expect(message.contains("release asset not found"))
+        #expect(ssh.commands.count == 1)
+        #expect(ssh.commands.first?.contains("tmux-chatd.tgz") == true)
     }
 }

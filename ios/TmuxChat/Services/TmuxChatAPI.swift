@@ -144,8 +144,8 @@ class TmuxChatAPI {
         }
     }
 
-    func getDiagnostics() async throws -> DaemonDiagnosticsResponse {
-        let data = try await request(path: "/diagnostics", method: "GET")
+    func getDiagnostics(server: ServerConfig? = nil) async throws -> DaemonDiagnosticsResponse {
+        let data = try await request(path: "/diagnostics", method: "GET", server: server)
         return try JSONDecoder().decode(DaemonDiagnosticsResponse.self, from: data)
     }
 
@@ -180,11 +180,11 @@ class TmuxChatAPI {
         _ = try await request(path: "/panes/\(encodedTarget)/key", method: "POST", body: body)
     }
 
-    func probeShortcutKeyEndpoint(target: String) async throws {
+    func probeShortcutKeyEndpoint(target: String, server: ServerConfig? = nil) async throws {
         if isDemoMode { return }
         let body = SendKeyRequest(key: "Enter")
         let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
-        _ = try await request(path: "/panes/\(encodedTarget)/key?probe=1", method: "POST", body: body)
+        _ = try await request(path: "/panes/\(encodedTarget)/key?probe=1", method: "POST", body: body, server: server)
     }
 
     func getOutput(target: String, lines: Int = 200) async throws -> String {

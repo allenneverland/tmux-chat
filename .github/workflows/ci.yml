@@ -81,6 +81,37 @@ jobs:
       - name: Rust test (tmux-chatd + host-agent)
         run: cargo test -p tmux-chatd -p host-agent
 
+      - name: Control-plane contract smoke (tmux-chatd)
+        run: |
+          set -euo pipefail
+          DATA_DIR="$(mktemp -d)"
+          PORT=18787
+          TMUX_CHATD_DATA_DIR="$DATA_DIR" TMUX_CHATD_BIND_ADDR=127.0.0.1 TMUX_CHATD_PORT="$PORT" \
+            ./target/debug/tmux-chatd >"$DATA_DIR/tmux-chatd.log" 2>&1 &
+          DAEMON_PID=$!
+          trap 'kill "$DAEMON_PID" 2>/dev/null || true; wait "$DAEMON_PID" 2>/dev/null || true; rm -rf "$DATA_DIR"' EXIT
+
+          healthy=0
+          for i in $(seq 1 20); do
+            if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null; then
+              healthy=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$healthy" -ne 1 ]; then
+            echo "::error::tmux-chatd health check failed"
+            cat "$DATA_DIR/tmux-chatd.log" || true
+            exit 1
+          fi
+
+          CONTROL_TOKEN="$(TMUX_CHATD_DATA_DIR="$DATA_DIR" ./target/debug/tmux-chatd devices issue --name ci-smoke --json | jq -r '.device_token')"
+          test -n "$CONTROL_TOKEN"
+
+          make control-plane-smoke \
+            CONTROL_PLANE_BASE_URL="http://127.0.0.1:${PORT}" \
+            CONTROL_PLANE_TOKEN="$CONTROL_TOKEN"
+
   push-server-docker:
     name: Push Server (Docker)
     runs-on: ubuntu-latest

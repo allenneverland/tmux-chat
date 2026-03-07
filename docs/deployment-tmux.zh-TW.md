@@ -219,14 +219,25 @@ make control-plane-smoke \
    - sessions 可正常列出
    - `New Session` 可成功建立
 
+> 目前 onboarding 會做 **雙驗證**：
+> 1) SSH 主機 loopback（`127.0.0.1:8787`）必須通過 schema/probe 契約  
+> 2) iOS 填入的外部 Control URL 也必須通過同一契約  
+> 任一失敗都會中止，不會寫入半完成 server 設定。
+
 ### 8.5 常見失敗與處理
 
 - **Release workflow 成功，但 iOS 仍抓舊版**
   - 檢查 iOS 是連到哪台主機、哪個 `tmux-chatd` binary（systemd/launchd 可能還在舊路徑）
 - **找不到對應 Linux asset**
   - 檢查 Release 是否真的有 `tmux-chatd-linux-x86_64-gnu.tar.gz` 或 `...-musl.tar.gz`
+- **onboarding 顯示 tmux-chatd latest 安裝失敗**
+  - 現在策略是「安裝失敗即硬失敗」，不再沿用舊 binary 繼續
+  - 先修復主機下載/發版資產問題，再重新 onboarding
 - **`/capabilities` 或 `/diagnostics` 是 404，或 schema < 3**
   - 代表主機仍在跑舊版 `tmux-chatd`，需升級並重啟服務（iOS 現在要求 schema v3 + `pane_key_probe`）
+- **loopback 驗證成功，但外部 Control URL 驗證失敗**
+  - 代表主機本機 daemon 正常，但反向代理/tunnel 指到錯主機或漏掉路由規則
+  - 優先檢查 method+path 規則是否允許 `GET /capabilities`、`GET /diagnostics`、`POST /panes/*/key?probe=1`
 - **`/capabilities` 顯示 `shortcut_keys=true`，但 iOS 按快捷鍵仍出現 `/panes/{target}/key` 404**
   - 優先檢查反向代理或 tunnel 是否放行 `POST /panes/*/key`
   - 確認 iOS `BASE_URL` 指向與 CLI 測試相同的主機/埠

@@ -120,13 +120,12 @@ final class SSHOnboardingCoordinator {
             try await validateSSHUser(on: connectionSpec)
 
             step = .verifyingTmuxChatd
-            let hasTmuxChatd = (try? await sshExecutor.run(
-                command: "/bin/sh -c \(shellQuote("command -v tmux-chatd >/dev/null 2>&1 || [ -x \"$HOME/.local/bin/tmux-chatd\" ]"))",
+            _ = try await sshExecutor.run(
+                command: "/bin/sh -c \(shellQuote("command -v tmux-chatd >/dev/null 2>&1 || [ -x \"$HOME/.local/bin/tmux-chatd\" ] || true"))",
                 on: connectionSpec
-            )) != nil
-            if !hasTmuxChatd {
-                step = .installingTmuxChatd
-            }
+            )
+
+            step = .installingTmuxChatd
             let tmuxChatdExecutable = try await installer.ensureTmuxChatdInstalled(on: connectionSpec)
 
             step = .startingTmuxChatd
@@ -152,6 +151,31 @@ final class SSHOnboardingCoordinator {
                 on: connectionSpec,
                 tmuxChatdExecutable: tmuxChatdExecutable
             )
+
+            let provisionalConfig = ServerConfig(
+                serverURL: normalizedURL,
+                controlToken: issued.deviceToken,
+                deviceId: issued.deviceId,
+                deviceName: issued.deviceName,
+                serverName: finalServerName,
+                deviceApiToken: nil,
+                sshCredentialId: nil,
+                sshUsername: connectionSpec.username,
+                needsPushRebind: false,
+                registeredAt: Date()
+            )
+
+            step = .verifyingControlPlane
+            try await verifyControlPlaneContractOnHostLoopback(
+                on: connectionSpec,
+                deviceToken: issued.deviceToken
+            )
+            let verification = try await verifyControlPlaneContractFromClient(server: provisionalConfig)
+            guard verification.diagnostics.daemonUser == connectionSpec.username else {
+                throw APIError.serverError(
+                    "Control URL points to tmux-chatd user \(verification.diagnostics.daemonUser), but SSH onboarding user is \(connectionSpec.username). Verify reverse-proxy/tunnel routing and reconnect with the tmux owner account."
+                )
+            }
 
             step = .startingPairing
             let pairing = try await api.startPairing(
@@ -189,18 +213,14 @@ final class SSHOnboardingCoordinator {
                 ServerConfigManager.shared.removeServer(replacingServer.id)
             }
 
-            let config = ServerConfig(
-                serverURL: normalizedURL,
-                controlToken: issued.deviceToken,
-                deviceId: issued.deviceId,
-                deviceName: issued.deviceName,
-                serverName: finalServerName,
-                deviceApiToken: registration.deviceApiToken,
-                sshCredentialId: credentialId,
-                sshUsername: connectionSpec.username,
-                needsPushRebind: false,
-                registeredAt: Date()
-            )
+            var config = provisionalConfig
+            config.deviceApiToken = registration.deviceApiToken
+            config.sshCredentialId = credentialId
+            config.sshUsername = connectionSpec.username
+            config.lastVerifiedDaemonUser = verification.diagnostics.daemonUser
+            config.lastConnectionState = verification.sessions.isEmpty ? "ready_no_sessions" : "ready"
+            config.lastVerifiedAt = Date()
+
             guard ServerConfigManager.shared.addServer(config) else {
                 if let replacingServer {
                     _ = ServerConfigManager.shared.addServer(replacingServer)
@@ -218,28 +238,6 @@ final class SSHOnboardingCoordinator {
                 SSHCredentialStore.shared.delete(id: existingByDeviceId.sshCredentialId)
             }
             ServerConfigManager.shared.setActiveServer(config.id)
-
-            step = .verifyingControlPlane
-            let capabilities = try await api.getCapabilities(forceRefresh: true)
-            guard capabilities.supportsRequiredShortcutContract else {
-                throw APIError.serverError(
-                    "Host tmux-chatd does not satisfy required control-plane contract (schema v3 + pane_key_probe). Upgrade host tmux-chatd and reconnect."
-                )
-            }
-            let sessions = try await api.listSessions()
-            let probeTarget = sessions
-                .flatMap(\.windows)
-                .flatMap(\.panes)
-                .first?
-                .target ?? "shortcut-probe"
-            try await api.probeShortcutKeyEndpoint(target: probeTarget)
-            if let diagnostics = try? await api.getDiagnostics() {
-                var updated = config
-                updated.lastVerifiedDaemonUser = diagnostics.daemonUser
-                updated.lastConnectionState = "ready"
-                updated.lastVerifiedAt = Date()
-                ServerConfigManager.shared.updateServer(updated)
-            }
 
             step = .completed
             return true
@@ -338,6 +336,172 @@ final class SSHOnboardingCoordinator {
         let command = "\(shellQuote(tmuxChatdExecutable)) devices issue --name \(shellQuote(rawDeviceName)) --json"
         let result = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(command))", on: connection)
         return try decodeJSONFromOutput(result.stdout, as: IssuedDeviceCredentials.self)
+    }
+
+    private func verifyControlPlaneContractOnHostLoopback(
+        on connection: SSHConnectionSpec,
+        deviceToken: String
+    ) async throws {
+        let script = """
+        set -eu
+
+        TOKEN=\(shellQuote(deviceToken))
+        BASE_URL="http://127.0.0.1:8787"
+
+        if ! command -v curl >/dev/null 2>&1; then
+          echo "loopback_missing_curl" >&2
+          exit 1
+        fi
+
+        CAPS_JSON="$(curl -fsS "$BASE_URL/capabilities")"
+
+        if command -v jq >/dev/null 2>&1; then
+          echo "$CAPS_JSON" \
+            | jq -e '.capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null \
+            || { echo "loopback_capabilities_contract_mismatch" >&2; exit 1; }
+        else
+          echo "$CAPS_JSON" | grep -Eq '"capabilities_schema_version"[[:space:]]*:[[:space:]]*[3-9][0-9]*' || { echo "loopback_capabilities_schema_too_old" >&2; exit 1; }
+          echo "$CAPS_JSON" | grep -Eq '"shortcut_keys"[[:space:]]*:[[:space:]]*true' || { echo "loopback_capabilities_shortcut_keys_missing" >&2; exit 1; }
+          echo "$CAPS_JSON" | grep -Eq '"pane_key"[[:space:]]*:[[:space:]]*true' || { echo "loopback_capabilities_pane_key_missing" >&2; exit 1; }
+          echo "$CAPS_JSON" | grep -Eq '"pane_key_probe"[[:space:]]*:[[:space:]]*true' || { echo "loopback_capabilities_pane_key_probe_missing" >&2; exit 1; }
+        fi
+
+        curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE_URL/diagnostics" >/dev/null
+
+        STATUS="$(curl -sS -o /dev/null -w "%{http_code}" \
+          -X POST \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/json" \
+          "$BASE_URL/panes/shortcut-probe/key?probe=1" \
+          -d '{"key":"Enter"}')"
+        [ "$STATUS" = "204" ] || { echo "loopback_probe_http_${STATUS}" >&2; exit 1; }
+        """
+
+        do {
+            _ = try await sshExecutor.run(command: "/bin/sh -c \(shellQuote(script))", on: connection)
+        } catch {
+            throw mapLoopbackControlPlaneError(error)
+        }
+    }
+
+    private func verifyControlPlaneContractFromClient(
+        server: ServerConfig
+    ) async throws -> (sessions: [Session], diagnostics: DaemonDiagnosticsResponse) {
+        do {
+            let capabilities = try await api.getCapabilities(server: server, forceRefresh: true)
+            guard capabilities.supportsRequiredShortcutContract else {
+                throw APIError.serverError(
+                    requiredShortcutContractFailureMessage(
+                        scope: "Control URL \(server.serverURL)",
+                        capabilities: capabilities
+                    )
+                )
+            }
+
+            let sessions = try await api.listSessions(for: server)
+            let probeTarget = sessions
+                .flatMap(\.windows)
+                .flatMap(\.panes)
+                .first?
+                .target ?? "shortcut-probe"
+            try await api.probeShortcutKeyEndpoint(target: probeTarget, server: server)
+            let diagnostics = try await api.getDiagnostics(server: server)
+
+            return (sessions, diagnostics)
+        } catch {
+            throw mapExternalControlPlaneError(error, serverURL: server.serverURL)
+        }
+    }
+
+    private func requiredShortcutContractFailureMessage(
+        scope: String,
+        capabilities: DaemonCapabilitiesResponse
+    ) -> String {
+        let schema = capabilities.capabilitiesSchemaVersion.map(String.init) ?? "nil"
+        let shortcutKeys = capabilities.features?.shortcutKeys.map { $0 ? "true" : "false" } ?? "nil"
+        let paneKey = capabilities.endpoints.paneKey.map { $0 ? "true" : "false" } ?? "nil"
+        let paneKeyProbe = capabilities.endpoints.paneKeyProbe.map { $0 ? "true" : "false" } ?? "nil"
+        return
+            "\(scope) does not satisfy required control-plane contract (required: schema>=3, shortcut_keys=true, pane_key=true, pane_key_probe=true; got: schema=\(schema), shortcut_keys=\(shortcutKeys), pane_key=\(paneKey), pane_key_probe=\(paneKeyProbe)). Upgrade host tmux-chatd and verify reverse-proxy/tunnel routing."
+    }
+
+    private func mapLoopbackControlPlaneError(_ error: Error) -> APIError {
+        if let apiError = error as? APIError {
+            return apiError
+        }
+        guard case .commandFailed(_, let stderr) = error as? SSHCommandExecutorError else {
+            return APIError.serverError(
+                "Host loopback control-plane verification failed. \(error.localizedDescription)"
+            )
+        }
+
+        let details = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if details.contains("loopback_missing_curl") {
+            return APIError.serverError(
+                "Host loopback control-plane verification failed: `curl` is missing on remote host."
+            )
+        }
+        if details.contains("loopback_capabilities_contract_mismatch") {
+            return APIError.serverError(
+                "Host loopback tmux-chatd does not satisfy required control-plane contract (schema>=3 + pane_key_probe). Details: \(details)"
+            )
+        }
+        if details.contains("loopback_probe_http_") {
+            return APIError.serverError(
+                "Host loopback shortcut probe route is not healthy (`POST /panes/{target}/key?probe=1` must return 204). Details: \(details)"
+            )
+        }
+        if details.isEmpty {
+            return APIError.serverError("Host loopback control-plane verification failed.")
+        }
+        return APIError.serverError("Host loopback control-plane verification failed: \(details)")
+    }
+
+    private func mapExternalControlPlaneError(_ error: Error, serverURL: String) -> APIError {
+        guard let apiError = error as? APIError else {
+            return APIError.serverError(
+                "External control-plane verification failed for \(serverURL): \(error.localizedDescription)"
+            )
+        }
+
+        switch apiError {
+        case .serverError:
+            return apiError
+        case .unauthorized:
+            return APIError.serverError(
+                "Control URL \(serverURL) rejected the newly issued token. This usually means URL/route points to a different tmux-chatd host than the SSH target."
+            )
+        case .networkError(let underlying):
+            return APIError.serverError(
+                "Control URL \(serverURL) is unreachable from this iOS device. \(underlying.localizedDescription)"
+            )
+        case .httpError(let statusCode, let path, let code, _):
+            if statusCode == 404,
+               path == "/capabilities" || path == "/diagnostics" || path == "/sessions" {
+                return APIError.serverError(
+                    "Control URL \(serverURL) is missing required endpoints (\(path)). Upgrade tmux-chatd or fix reverse-proxy/tunnel route mapping."
+                )
+            }
+            if statusCode == 404, path.contains("/panes/"), path.contains("/key") {
+                return APIError.serverError(
+                    "Control URL \(serverURL) has shortcut route mismatch: `POST /panes/*/key?probe=1` returned 404. Fix reverse-proxy/tunnel method+path routing."
+                )
+            }
+            if statusCode == 400, code == "missing_key_payload" || code == "invalid_key_token" {
+                return APIError.serverError(
+                    "Control URL \(serverURL) is running an incompatible key endpoint contract. Upgrade host tmux-chatd and retry."
+                )
+            }
+            return APIError.serverError(
+                "External control-plane verification failed for \(serverURL): HTTP \(statusCode) at \(path)."
+            )
+        case .decodingError:
+            return APIError.serverError(
+                "Control URL \(serverURL) returned malformed control-plane payload. Upgrade tmux-chatd and verify no proxy is rewriting JSON responses."
+            )
+        case .invalidURL:
+            return APIError.serverError("Control URL \(serverURL) is invalid.")
+        }
     }
 
     private func decodeJSONFromOutput<T: Decodable>(_ output: String, as type: T.Type) throws -> T {
