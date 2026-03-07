@@ -139,7 +139,10 @@ mod tests {
             value.get("process_executable").and_then(|v| v.as_str()),
             Some("/usr/local/bin/tmux-chatd")
         );
-        assert_eq!(value.get("build_tag").and_then(|v| v.as_str()), Some("v1.0.24"));
+        assert_eq!(
+            value.get("build_tag").and_then(|v| v.as_str()),
+            Some("v1.0.24")
+        );
         assert_eq!(
             value.get("build_commit").and_then(|v| v.as_str()),
             Some("abcdef0")
