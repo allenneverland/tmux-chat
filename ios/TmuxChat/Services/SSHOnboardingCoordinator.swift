@@ -372,7 +372,7 @@ final class SSHOnboardingCoordinator {
           -X POST \
           -H "Authorization: Bearer $TOKEN" \
           -H "Content-Type: application/json" \
-          "$BASE_URL/panes/shortcut-probe/key?probe=1" \
+          "$BASE_URL/panes/shortcut-probe/key?probe=true" \
           -d '{"key":"Enter"}')"
         [ "$STATUS" = "204" ] || { echo "loopback_probe_http_${STATUS}" >&2; exit 1; }
         """
@@ -448,7 +448,7 @@ final class SSHOnboardingCoordinator {
         }
         if details.contains("loopback_probe_http_") {
             return APIError.serverError(
-                "Host loopback shortcut probe route is not healthy (`POST /panes/{target}/key?probe=1` must return 204). Details: \(details)"
+                "Host loopback shortcut probe route is not healthy (`POST /panes/{target}/key?probe=true` must return 204). Details: \(details)"
             )
         }
         if details.isEmpty {
@@ -484,7 +484,7 @@ final class SSHOnboardingCoordinator {
             }
             if statusCode == 404, path.contains("/panes/"), path.contains("/key") {
                 return APIError.serverError(
-                    "Control URL \(serverURL) has shortcut route mismatch: `POST /panes/*/key?probe=1` returned 404. Fix reverse-proxy/tunnel method+path routing."
+                    "Control URL \(serverURL) has shortcut route mismatch: `POST /panes/*/key?probe=true` returned 404. Fix reverse-proxy/tunnel method+path routing."
                 )
             }
             if statusCode == 400, code == "missing_key_payload" || code == "invalid_key_token" {

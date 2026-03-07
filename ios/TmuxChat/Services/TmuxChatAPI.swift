@@ -184,7 +184,7 @@ class TmuxChatAPI {
         if isDemoMode { return }
         let body = SendKeyRequest(key: "Enter")
         let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
-        _ = try await request(path: "/panes/\(encodedTarget)/key?probe=1", method: "POST", body: body, server: server)
+        _ = try await request(path: "/panes/\(encodedTarget)/key?probe=true", method: "POST", body: body, server: server)
     }
 
     func getOutput(target: String, lines: Int = 200) async throws -> String {

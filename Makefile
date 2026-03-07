@@ -201,7 +201,7 @@ control-plane-smoke:
 		-X POST \
 		-H "Authorization: Bearer $(CONTROL_PLANE_TOKEN)" \
 		-H "Content-Type: application/json" \
-		"$(CONTROL_PLANE_BASE_URL)/panes/$(SHORTCUT_PROBE_TARGET)/key?probe=1" \
+		"$(CONTROL_PLANE_BASE_URL)/panes/$(SHORTCUT_PROBE_TARGET)/key?probe=true" \
 		-d '{"key":"Enter"}'); \
 		test "$$status" = "204" || (echo "shortcut probe failed with HTTP $$status"; exit 1)
 	@echo "Control-plane smoke check passed."

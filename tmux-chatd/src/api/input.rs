@@ -114,6 +114,7 @@ pub async fn send_escape(
 #[cfg(test)]
 mod tests {
     use axum::extract::{Path, Query};
+    use axum::http::Uri;
 
     use super::{key_token_is_valid, send_key, SendKeyQuery};
     use axum::http::StatusCode;
@@ -156,5 +157,23 @@ mod tests {
         )
         .await;
         assert!(matches!(result, Ok(StatusCode::NO_CONTENT)));
+    }
+
+    #[test]
+    fn query_accepts_boolean_probe_flag() {
+        let uri: Uri = "/panes/dev:0.0/key?probe=true"
+            .parse()
+            .expect("valid probe=true URI");
+        let query = Query::<SendKeyQuery>::try_from_uri(&uri).expect("probe=true should parse");
+        assert!(matches!(query.0.probe, Some(true)));
+    }
+
+    #[test]
+    fn query_rejects_numeric_probe_flag() {
+        let uri: Uri = "/panes/dev:0.0/key?probe=1"
+            .parse()
+            .expect("valid probe=1 URI");
+        let query = Query::<SendKeyQuery>::try_from_uri(&uri);
+        assert!(query.is_err(), "probe=1 must be rejected (bool-only contract)");
     }
 }

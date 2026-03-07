@@ -205,7 +205,7 @@ curl -s http://127.0.0.1:8787/capabilities | jq '{schema: .capabilities_schema_v
 curl -i -X POST \
   -H "Authorization: Bearer <device_token>" \
   -H "Content-Type: application/json" \
-  "http://127.0.0.1:8787/panes/shortcut-probe/key?probe=1" \
+  "http://127.0.0.1:8787/panes/shortcut-probe/key?probe=true" \
   -d '{"key":"Enter"}'
 
 # 或使用 Makefile 一次檢查（需 jq）
@@ -237,10 +237,10 @@ make control-plane-smoke \
   - 代表主機仍在跑舊版 `tmux-chatd`，需升級並重啟服務（iOS 現在要求 schema v3 + `pane_key_probe`）
 - **loopback 驗證成功，但外部 Control URL 驗證失敗**
   - 代表主機本機 daemon 正常，但反向代理/tunnel 指到錯主機或漏掉路由規則
-  - 優先檢查 method+path 規則是否允許 `GET /capabilities`、`GET /diagnostics`、`POST /panes/*/key?probe=1`
+  - 優先檢查 method+path 規則是否允許 `GET /capabilities`、`GET /diagnostics`、`POST /panes/*/key?probe=true`
 - **`/capabilities` 顯示 `shortcut_keys=true`，但 iOS 按快捷鍵仍出現 `/panes/{target}/key` 404**
   - 優先檢查反向代理或 tunnel 是否放行 `POST /panes/*/key`
   - 確認 iOS `BASE_URL` 指向與 CLI 測試相同的主機/埠
   - 檢查服務實際執行的 binary 路徑（可能仍指向舊檔）
-- **`POST /panes/shortcut-probe/key?probe=1` 不是 204**
+- **`POST /panes/shortcut-probe/key?probe=true` 不是 204**
   - 代表快捷鍵路由未完整通過反向代理 / tunnel，請檢查 method+path 規則是否允許 `POST /panes/*/key`
