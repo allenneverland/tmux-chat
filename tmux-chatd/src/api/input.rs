@@ -22,7 +22,7 @@ pub struct SendKeyQuery {
     pub probe: Option<bool>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub code: &'static str,
     pub error: String,
@@ -155,7 +155,6 @@ mod tests {
             None,
         )
         .await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), StatusCode::NO_CONTENT);
+        assert!(matches!(result, Ok(StatusCode::NO_CONTENT)));
     }
 }

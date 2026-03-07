@@ -32,7 +32,7 @@ pub struct CreateSessionRequest {
     pub cwd: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: String,
 }

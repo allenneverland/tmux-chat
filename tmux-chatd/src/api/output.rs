@@ -24,7 +24,7 @@ pub struct OutputResponse {
     pub output: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: String,
 }

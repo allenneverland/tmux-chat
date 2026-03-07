@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use crate::tmux;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: String,
 }
