@@ -357,28 +357,44 @@ struct DetectedOption {
 }
 
 enum ShortcutEndpointState: Equatable {
+    case checking
     case available
-    case unknownLegacy
-    case unsupportedByServer
-    case deploymentMismatch
+    case unsupportedContract
+    case routeMismatch
+    case unauthorized
+    case unreachable
+    case serverError(String)
 
     var canUseToolbar: Bool {
         switch self {
-        case .available, .unknownLegacy:
+        case .available:
             return true
-        case .unsupportedByServer, .deploymentMismatch:
+        case .checking,
+             .unsupportedContract,
+             .routeMismatch,
+             .unauthorized,
+             .unreachable,
+             .serverError:
             return false
         }
     }
 
     var statusMessage: String {
         switch self {
-        case .available, .unknownLegacy:
+        case .available:
             return ""
-        case .unsupportedByServer:
-            return "This host does not expose shortcut-key support. Update tmux-chatd and reconnect."
-        case .deploymentMismatch:
+        case .checking:
+            return "Checking shortcut-key support..."
+        case .unsupportedContract:
+            return "This host does not satisfy the required shortcut contract (schema v3 + pane_key_probe). Upgrade tmux-chatd and reconnect."
+        case .routeMismatch:
             return "Shortcut route mismatch detected. Verify reverse-proxy routing and active tmux-chatd binary."
+        case .unauthorized:
+            return "Server authentication expired. Reconnect and re-pair this server."
+        case .unreachable:
+            return "Cannot verify shortcut route. Check network connectivity and server reachability."
+        case .serverError(let message):
+            return "Shortcut support check failed: \(message)"
         }
     }
 }
@@ -403,7 +419,7 @@ class PaneDetailViewModel {
     var errorMessage = ""
     var autoRefresh = true
     var quickAction: QuickAction = .none
-    var shortcutEndpointState: ShortcutEndpointState = .unknownLegacy
+    var shortcutEndpointState: ShortcutEndpointState = .checking
 
     var canUseShortcutToolbar: Bool {
         shortcutEndpointState.canUseToolbar
@@ -417,9 +433,7 @@ class PaneDetailViewModel {
     private let api = TmuxChatAPI.shared
     @ObservationIgnored private var pollingTask: Task<Void, Never>?
     @ObservationIgnored private var rawOutput: String = ""
-    @ObservationIgnored private var shortcutSupportFromCapabilities: DaemonShortcutKeysSupport = .unknown
-    @ObservationIgnored private var didReportUnsupportedKeyEndpoint = false
-    @ObservationIgnored private var didReportShortcutDeploymentMismatch = false
+    @ObservationIgnored private var didReportShortcutUnavailable = false
 
     init(target: String) {
         self.target = target
@@ -620,31 +634,76 @@ class PaneDetailViewModel {
         return result
     }
 
-    private func applyShortcutSupport(_ support: DaemonShortcutKeysSupport) {
-        shortcutSupportFromCapabilities = support
-        switch support {
-        case .supported:
-            shortcutEndpointState = .available
-        case .unsupported:
-            shortcutEndpointState = .unsupportedByServer
-        case .unknown:
-            shortcutEndpointState = .unknownLegacy
+    private func applyShortcutState(_ state: ShortcutEndpointState) {
+        shortcutEndpointState = state
+        if state == .available {
+            didReportShortcutUnavailable = false
         }
     }
 
-    private func refreshShortcutCapability(forceRefresh: Bool = false) async {
+    private func mapShortcutCapabilityError(_ error: APIError) -> ShortcutEndpointState {
+        switch error {
+        case .unauthorized:
+            return .unauthorized
+        case .networkError:
+            return .unreachable
+        case .decodingError:
+            return .unsupportedContract
+        case .httpError(let statusCode, let path, _, _):
+            if statusCode == 404 && path == "/capabilities" {
+                return .unsupportedContract
+            }
+            return .serverError(error.localizedDescription)
+        case .serverError, .invalidURL:
+            return .serverError(error.localizedDescription)
+        }
+    }
+
+    private func mapShortcutProbeError(_ error: APIError) -> ShortcutEndpointState {
+        switch error {
+        case .unauthorized:
+            return .unauthorized
+        case .networkError:
+            return .unreachable
+        case .httpError(let statusCode, let path, let code, _):
+            if statusCode == 404 &&
+                path.contains("/panes/") &&
+                path.contains("/key") {
+                return .routeMismatch
+            }
+            if statusCode == 400, code == "missing_key_payload" || code == "invalid_key_token" {
+                return .unsupportedContract
+            }
+            return .serverError(error.localizedDescription)
+        case .serverError, .decodingError, .invalidURL:
+            return .serverError(error.localizedDescription)
+        }
+    }
+
+    private func verifyShortcutCapability(forceRefresh: Bool = false) async {
+        applyShortcutState(.checking)
+
         do {
             let capabilities = try await api.getCapabilities(forceRefresh: forceRefresh)
-            applyShortcutSupport(capabilities.shortcutKeysSupport)
-        } catch let error as APIError {
-            // Older deployments may not expose /capabilities; keep legacy behavior.
-            if case .httpError(let statusCode, let path, _) = error,
-               statusCode == 404,
-               path == "/capabilities" {
-                applyShortcutSupport(.unknown)
+            guard capabilities.supportsRequiredShortcutContract else {
+                applyShortcutState(.unsupportedContract)
+                return
             }
+        } catch let error as APIError {
+            applyShortcutState(mapShortcutCapabilityError(error))
+            return
         } catch {
-            // Keep current state on transient failures.
+            applyShortcutState(.serverError(error.localizedDescription))
+            return
+        }
+
+        do {
+            try await api.probeShortcutKeyEndpoint(target: target)
+            applyShortcutState(.available)
+        } catch let error as APIError {
+            applyShortcutState(mapShortcutProbeError(error))
+        } catch {
+            applyShortcutState(.serverError(error.localizedDescription))
         }
     }
 
@@ -655,7 +714,7 @@ class PaneDetailViewModel {
 
     func startPolling() async {
         stopPolling()
-        await refreshShortcutCapability()
+        await verifyShortcutCapability(forceRefresh: true)
         await refresh()
 
         pollingTask = Task {
@@ -752,18 +811,9 @@ class PaneDetailViewModel {
     }
 
     func sendKey(_ key: String) async -> Bool {
-        if shortcutEndpointState == .unsupportedByServer {
-            if !didReportUnsupportedKeyEndpoint {
-                didReportUnsupportedKeyEndpoint = true
-                errorMessage = shortcutStatusMessage
-                showError = true
-            }
-            return false
-        }
-
-        if shortcutEndpointState == .deploymentMismatch {
-            if !didReportShortcutDeploymentMismatch {
-                didReportShortcutDeploymentMismatch = true
+        if !shortcutEndpointState.canUseToolbar {
+            if !didReportShortcutUnavailable {
+                didReportShortcutUnavailable = true
                 errorMessage = shortcutStatusMessage
                 showError = true
             }
@@ -775,36 +825,22 @@ class PaneDetailViewModel {
 
         do {
             try await api.sendKey(target: target, key: key)
-            if shortcutEndpointState == .unknownLegacy {
-                shortcutEndpointState = .available
-            }
             try? await Task.sleep(for: .milliseconds(150))
             await refreshSilently()
             return true
         } catch let error as APIError {
             switch error {
             case .unauthorized:
-                errorMessage = "Server authentication expired. Reconnect and re-pair this server."
+                applyShortcutState(.unauthorized)
+                errorMessage = shortcutStatusMessage
                 showError = true
-            case .httpError(let statusCode, let path, _):
+            case .httpError(let statusCode, let path, _, _):
                 if statusCode == 404 &&
                     path.contains("/panes/") &&
                     path.hasSuffix("/key") {
-                    if shortcutSupportFromCapabilities == .supported {
-                        shortcutEndpointState = .deploymentMismatch
-                        if !didReportShortcutDeploymentMismatch {
-                            didReportShortcutDeploymentMismatch = true
-                            errorMessage = "Shortcut route mismatch detected. Server claims support, but /panes/{target}/key returned 404. Verify reverse proxy routes and active tmux-chatd binary."
-                            showError = true
-                        }
-                    } else {
-                        shortcutEndpointState = .unsupportedByServer
-                        if !didReportUnsupportedKeyEndpoint {
-                            didReportUnsupportedKeyEndpoint = true
-                            errorMessage = "This tmux-chatd deployment does not expose shortcut keys yet. Upgrade tmux-chatd and reconnect."
-                            showError = true
-                        }
-                    }
+                    applyShortcutState(.routeMismatch)
+                    errorMessage = shortcutStatusMessage
+                    showError = true
                 } else {
                     errorMessage = error.localizedDescription
                     showError = true
@@ -812,7 +848,11 @@ class PaneDetailViewModel {
             case .serverError:
                 errorMessage = error.localizedDescription
                 showError = true
-            case .decodingError, .invalidURL, .networkError:
+            case .networkError:
+                applyShortcutState(.unreachable)
+                errorMessage = shortcutStatusMessage
+                showError = true
+            case .decodingError, .invalidURL:
                 errorMessage = error.localizedDescription
                 showError = true
             }

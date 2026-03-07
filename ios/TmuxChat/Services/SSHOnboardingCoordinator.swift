@@ -220,7 +220,19 @@ final class SSHOnboardingCoordinator {
             ServerConfigManager.shared.setActiveServer(config.id)
 
             step = .verifyingControlPlane
-            _ = try await api.listSessions()
+            let capabilities = try await api.getCapabilities(forceRefresh: true)
+            guard capabilities.supportsRequiredShortcutContract else {
+                throw APIError.serverError(
+                    "Host tmux-chatd does not satisfy required control-plane contract (schema v3 + pane_key_probe). Upgrade host tmux-chatd and reconnect."
+                )
+            }
+            let sessions = try await api.listSessions()
+            let probeTarget = sessions
+                .flatMap(\.windows)
+                .flatMap(\.panes)
+                .first?
+                .target ?? "shortcut-probe"
+            try await api.probeShortcutKeyEndpoint(target: probeTarget)
             if let diagnostics = try? await api.getDiagnostics() {
                 var updated = config
                 updated.lastVerifiedDaemonUser = diagnostics.daemonUser

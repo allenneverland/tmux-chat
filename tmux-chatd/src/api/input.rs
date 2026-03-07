@@ -1,4 +1,8 @@
-use axum::{extract::Path, http::StatusCode, Json};
+use axum::{
+    extract::{Path, Query},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::tmux;
@@ -13,8 +17,14 @@ pub struct SendKeyRequest {
     pub key: String,
 }
 
+#[derive(Deserialize, Default)]
+pub struct SendKeyQuery {
+    pub probe: Option<bool>,
+}
+
 #[derive(Serialize)]
 pub struct ErrorResponse {
+    pub code: &'static str,
     pub error: String,
 }
 
@@ -40,6 +50,7 @@ pub async fn send_input(
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
+                code: "tmux_error",
                 error: e.to_string(),
             }),
         )),
@@ -48,12 +59,26 @@ pub async fn send_input(
 
 pub async fn send_key(
     Path(target): Path<String>,
-    Json(payload): Json<SendKeyRequest>,
+    Query(query): Query<SendKeyQuery>,
+    payload: Option<Json<SendKeyRequest>>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    if query.probe.unwrap_or(false) {
+        return Ok(StatusCode::NO_CONTENT);
+    }
+
+    let payload = payload.ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            code: "missing_key_payload",
+            error: "missing key payload".to_string(),
+        }),
+    ))?;
+
     if !key_token_is_valid(&payload.key) {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
+                code: "invalid_key_token",
                 error: "invalid key token".to_string(),
             }),
         ));
@@ -64,6 +89,7 @@ pub async fn send_key(
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
+                code: "tmux_error",
                 error: e.to_string(),
             }),
         )),
@@ -78,6 +104,7 @@ pub async fn send_escape(
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
+                code: "tmux_error",
                 error: e.to_string(),
             }),
         )),
@@ -86,7 +113,10 @@ pub async fn send_escape(
 
 #[cfg(test)]
 mod tests {
-    use super::key_token_is_valid;
+    use axum::extract::{Path, Query};
+
+    use super::{key_token_is_valid, send_key, SendKeyQuery};
+    use axum::http::StatusCode;
 
     #[test]
     fn accepts_valid_tokens() {
@@ -115,5 +145,17 @@ mod tests {
                 "expected invalid token: {token:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn probe_returns_no_content() {
+        let result = send_key(
+            Path("dev:0.0".to_string()),
+            Query(SendKeyQuery { probe: Some(true) }),
+            None,
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), StatusCode::NO_CONTENT);
     }
 }

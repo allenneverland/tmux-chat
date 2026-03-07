@@ -20,6 +20,9 @@ PUSH_SERVER_CONTAINER_PORT ?= 8790
 # Push-server forwarding configuration (override in config.local.mk)
 PUSH_SERVER_BASE_URL ?= http://127.0.0.1:8790
 PUSH_SERVER_COMPAT_NOTIFY_TOKEN ?=
+CONTROL_PLANE_BASE_URL ?= http://127.0.0.1:8787
+CONTROL_PLANE_TOKEN ?=
+SHORTCUT_PROBE_TARGET ?= shortcut-probe
 
 # Include local config if exists
 -include config.local.mk
@@ -28,7 +31,7 @@ PUSH_SERVER_COMPAT_NOTIFY_TOKEN ?=
 	push-server-docker-dev-image push-server-docker-fmt push-server-docker-test \
 	push-server-docker-build push-server-docker-image push-server-docker-run \
 	push-server-env-init push-server-deploy push-server-stop push-server-status push-server-logs \
-	tailscale-only-init
+	tailscale-only-init control-plane-smoke
 
 all: build
 
@@ -181,3 +184,24 @@ push-server-logs:
 tailscale-only-init:
 	@PUSH_SERVER_ENV_FILE="$(PUSH_SERVER_ENV_FILE)" \
 		ops/deploy/tailscale-only-init.sh
+
+# Validate control-plane contract (schema v3 + shortcut probe route).
+control-plane-smoke:
+	@test -n "$(CONTROL_PLANE_TOKEN)" || (echo "CONTROL_PLANE_TOKEN is required"; exit 1)
+	@echo "Checking healthz..."
+	@curl -fsS "$(CONTROL_PLANE_BASE_URL)/healthz" >/dev/null
+	@echo "Checking capabilities schema..."
+	@curl -fsS "$(CONTROL_PLANE_BASE_URL)/capabilities" \
+		| jq -e '.capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null
+	@echo "Checking diagnostics auth..."
+	@curl -fsS -H "Authorization: Bearer $(CONTROL_PLANE_TOKEN)" \
+		"$(CONTROL_PLANE_BASE_URL)/diagnostics" >/dev/null
+	@echo "Checking shortcut probe route..."
+	@status=$$(curl -sS -o /dev/null -w "%{http_code}" \
+		-X POST \
+		-H "Authorization: Bearer $(CONTROL_PLANE_TOKEN)" \
+		-H "Content-Type: application/json" \
+		"$(CONTROL_PLANE_BASE_URL)/panes/$(SHORTCUT_PROBE_TARGET)/key?probe=1" \
+		-d '{"key":"Enter"}'); \
+		test "$$status" = "204" || (echo "shortcut probe failed with HTTP $$status"; exit 1)
+	@echo "Control-plane smoke check passed."

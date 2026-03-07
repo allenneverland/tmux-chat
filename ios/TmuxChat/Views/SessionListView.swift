@@ -780,6 +780,14 @@ class SessionListViewModel {
             let activeServerID = ServerConfigManager.shared.activeServer?.deviceId
             if validatedCapabilitiesServerID != activeServerID {
                 let caps = try await api.getCapabilities(forceRefresh: true)
+                guard caps.supportsRequiredShortcutContract else {
+                    connectionState = .unsupportedServer(
+                        "Current host tmux-chatd does not satisfy required control-plane contract (schema v3 + pane_key_probe). Upgrade host tmux-chatd and reconnect."
+                    )
+                    updateActiveServerConnectionState("unsupported_server")
+                    sessions = []
+                    return
+                }
                 guard caps.endpoints.diagnostics else {
                     connectionState = .unsupportedServer(
                         "tmux-chatd \(caps.version) does not expose diagnostics. Upgrade host tmux-chatd to continue."
@@ -833,7 +841,7 @@ class SessionListViewModel {
                 diagnostics = nil
                 return
             }
-            if case .httpError(let statusCode, let path, _) = error,
+            if case .httpError(let statusCode, let path, _, _) = error,
                statusCode == 404,
                path == "/capabilities" || path == "/diagnostics" || path == "/sessions" {
                 connectionState = .unsupportedServer(

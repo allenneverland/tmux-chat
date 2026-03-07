@@ -157,6 +157,7 @@ struct DaemonEndpointCapabilities: Codable {
     let sessions: Bool
     let panes: Bool
     let paneKey: Bool?
+    let paneKeyProbe: Bool?
     let notify: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -166,6 +167,7 @@ struct DaemonEndpointCapabilities: Codable {
         case sessions
         case panes
         case paneKey = "pane_key"
+        case paneKeyProbe = "pane_key_probe"
         case notify
     }
 }
@@ -185,12 +187,25 @@ enum DaemonShortcutKeysSupport: Equatable {
 }
 
 extension DaemonCapabilitiesResponse {
+    var supportsRequiredShortcutContract: Bool {
+        (capabilitiesSchemaVersion ?? 0) >= 3 &&
+            features?.shortcutKeys == true &&
+            endpoints.paneKey == true &&
+            endpoints.paneKeyProbe == true
+    }
+
     var shortcutKeysSupport: DaemonShortcutKeysSupport {
+        if supportsRequiredShortcutContract {
+            return .supported
+        }
         if let shortcutKeys = features?.shortcutKeys {
             return shortcutKeys ? .supported : .unsupported
         }
         if let paneKey = endpoints.paneKey {
             return paneKey ? .supported : .unsupported
+        }
+        if let paneKeyProbe = endpoints.paneKeyProbe {
+            return paneKeyProbe ? .supported : .unsupported
         }
         return .unknown
     }
@@ -215,6 +230,7 @@ struct DaemonDiagnosticsResponse: Codable {
 }
 
 struct ErrorResponse: Codable {
+    let code: String?
     let error: String
 }
 

@@ -15,7 +15,7 @@ enum APIError: LocalizedError {
     case invalidURL
     case networkError(Error)
     case serverError(String)
-    case httpError(statusCode: Int, path: String, message: String?)
+    case httpError(statusCode: Int, path: String, code: String?, message: String?)
     case decodingError(Error)
     case unauthorized(AuthErrorType)
 
@@ -27,7 +27,7 @@ enum APIError: LocalizedError {
             return "Network error: \(error.localizedDescription)"
         case .serverError(let message):
             return "Server error: \(message)"
-        case .httpError(let statusCode, let path, let message):
+        case .httpError(let statusCode, let path, _, let message):
             if let message, !message.isEmpty {
                 return "HTTP \(statusCode) at \(path): \(message)"
             }
@@ -128,7 +128,7 @@ class TmuxChatAPI {
             return cached
         }
 
-        let data = try await requestWithoutAuth(path: "/capabilities", method: "GET", server: targetServer)
+        let data = try await request(path: "/capabilities", method: "GET", server: targetServer)
         let capabilities = try JSONDecoder().decode(DaemonCapabilitiesResponse.self, from: data)
         if let cacheKey {
             capabilitiesCache[cacheKey] = capabilities
@@ -178,6 +178,13 @@ class TmuxChatAPI {
         let body = SendKeyRequest(key: key)
         let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
         _ = try await request(path: "/panes/\(encodedTarget)/key", method: "POST", body: body)
+    }
+
+    func probeShortcutKeyEndpoint(target: String) async throws {
+        if isDemoMode { return }
+        let body = SendKeyRequest(key: "Enter")
+        let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
+        _ = try await request(path: "/panes/\(encodedTarget)/key?probe=1", method: "POST", body: body)
     }
 
     func getOutput(target: String, lines: Int = 200) async throws -> String {
@@ -366,59 +373,12 @@ class TmuxChatAPI {
             case 200...299:
                 return data
             default:
+                let decodedError = decodeErrorResponse(from: data)
                 throw APIError.httpError(
                     statusCode: httpResponse.statusCode,
                     path: path,
-                    message: decodeErrorMessage(from: data)
-                )
-            }
-        } catch let error as URLError {
-            let message = friendlyNetworkErrorMessage(for: error, url: url)
-            let wrapped = NSError(
-                domain: "TmuxChatAPI.Network",
-                code: error.errorCode,
-                userInfo: [NSLocalizedDescriptionKey: message]
-            )
-            throw APIError.networkError(wrapped)
-        } catch let error as APIError {
-            throw error
-        } catch {
-            throw APIError.networkError(error)
-        }
-    }
-
-    private func requestWithoutAuth(
-        path: String,
-        method: String,
-        server: ServerConfig? = nil
-    ) async throws -> Data {
-        let targetServer = server ?? ServerConfigManager.shared.activeServer
-        guard let url = makeControlPlaneURL(path: path, server: targetServer) else {
-            throw APIError.invalidURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        do {
-            let (data, response) = try await session.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw APIError.networkError(NSError(domain: "Invalid response", code: 0))
-            }
-
-            switch httpResponse.statusCode {
-            case 200...299:
-                return data
-            default:
-                if path == "/capabilities", let serverID = targetServer?.deviceId {
-                    invalidateCapabilitiesCache(for: serverID)
-                }
-                throw APIError.httpError(
-                    statusCode: httpResponse.statusCode,
-                    path: path,
-                    message: decodeErrorMessage(from: data)
+                    code: decodedError?.code,
+                    message: decodedError?.error
                 )
             }
         } catch let error as URLError {
@@ -482,10 +442,12 @@ class TmuxChatAPI {
                 if path == "/capabilities", let serverID = targetServer?.deviceId {
                     invalidateCapabilitiesCache(for: serverID)
                 }
+                let decodedError = decodeErrorResponse(from: data)
                 throw APIError.httpError(
                     statusCode: httpResponse.statusCode,
                     path: path,
-                    message: decodeErrorMessage(from: data)
+                    code: decodedError?.code,
+                    message: decodedError?.error
                 )
             }
         } catch let error as URLError {
@@ -518,11 +480,8 @@ class TmuxChatAPI {
         return ServerConfigManager.shared.activeServer?.deviceId
     }
 
-    private func decodeErrorMessage(from data: Data) -> String? {
-        guard let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) else {
-            return nil
-        }
-        return errorResponse.error
+    private func decodeErrorResponse(from data: Data) -> ErrorResponse? {
+        try? JSONDecoder().decode(ErrorResponse.self, from: data)
     }
 
     private func normalizeControlPlaneBaseURL(_ raw: String) -> String? {
@@ -585,6 +544,11 @@ class TmuxChatAPI {
         let empty: String? = nil
         return try await request(path: path, method: method, body: empty, server: server)
     }
+
+    private func request(path: String, method: String, server: ServerConfig?) async throws -> Data {
+        let empty: String? = nil
+        return try await request(path: path, method: method, body: empty, server: server)
+    }
 }
 
 // MARK: - Demo Mode Data
@@ -592,7 +556,7 @@ extension TmuxChatAPI {
     static let demoCapabilities = DaemonCapabilitiesResponse(
         daemon: "tmux-chatd",
         version: "demo",
-        capabilitiesSchemaVersion: 2,
+        capabilitiesSchemaVersion: 3,
         features: DaemonFeatureCapabilities(shortcutKeys: true),
         endpoints: DaemonEndpointCapabilities(
             healthz: true,
@@ -601,6 +565,7 @@ extension TmuxChatAPI {
             sessions: true,
             panes: true,
             paneKey: true,
+            paneKeyProbe: true,
             notify: true
         )
     )

@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use crate::tmux;
 
-const CAPABILITIES_SCHEMA_VERSION: u32 = 2;
+const CAPABILITIES_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Serialize)]
 pub struct HealthzResponse {
@@ -32,6 +32,7 @@ pub struct EndpointCapabilities {
     pub sessions: bool,
     pub panes: bool,
     pub pane_key: bool,
+    pub pane_key_probe: bool,
     pub notify: bool,
 }
 
@@ -54,6 +55,7 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
             sessions: true,
             panes: true,
             pane_key: true,
+            pane_key_probe: true,
             notify: true,
         },
     })
@@ -72,7 +74,7 @@ mod tests {
         let payload = CapabilitiesResponse {
             daemon: "tmux-chatd",
             version: "1.0.22",
-            capabilities_schema_version: 2,
+            capabilities_schema_version: 3,
             features: FeatureCapabilities {
                 shortcut_keys: true,
             },
@@ -83,6 +85,7 @@ mod tests {
                 sessions: true,
                 panes: true,
                 pane_key: true,
+                pane_key_probe: true,
                 notify: true,
             },
         };
@@ -92,7 +95,7 @@ mod tests {
             value
                 .get("capabilities_schema_version")
                 .and_then(|v| v.as_u64()),
-            Some(2)
+            Some(3)
         );
         assert_eq!(
             value
@@ -103,6 +106,12 @@ mod tests {
         assert_eq!(
             value
                 .pointer("/endpoints/pane_key")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            value
+                .pointer("/endpoints/pane_key_probe")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
