@@ -89,16 +89,20 @@ mod tests {
 
         let value = serde_json::to_value(payload).expect("serialize capabilities payload");
         assert_eq!(
-            value.get("capabilities_schema_version").and_then(|v| v.as_u64()),
+            value
+                .get("capabilities_schema_version")
+                .and_then(|v| v.as_u64()),
             Some(2)
         );
         assert_eq!(
-            value.pointer("/features/shortcut_keys")
+            value
+                .pointer("/features/shortcut_keys")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
         assert_eq!(
-            value.pointer("/endpoints/pane_key")
+            value
+                .pointer("/endpoints/pane_key")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
