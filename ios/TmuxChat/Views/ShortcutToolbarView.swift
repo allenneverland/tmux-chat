@@ -5,11 +5,26 @@ struct ShortcutToolbarView: View {
     @State private var layoutManager = ShortcutLayoutManager.shared
 
     var isSending: Bool
+    var pendingModifiers: Set<ShortcutModifier>
     var onKeyTapped: (ShortcutItem) -> Void
     private let swipeThreshold: CGFloat = 28
 
     private var canSwitchGroups: Bool {
         layoutManager.groups.count > 1
+    }
+
+    private var pendingModifierLabel: String {
+        ShortcutModifier.allCases
+            .filter { pendingModifiers.contains($0) }
+            .map(\.displayName)
+            .joined(separator: "+")
+    }
+
+    private func isModifierHighlighted(_ item: ShortcutItem) -> Bool {
+        guard let modifierOnly = item.modifierOnly else {
+            return false
+        }
+        return pendingModifiers.contains(modifierOnly)
     }
 
     private func handleSwipe(_ value: DragGesture.Value) {
@@ -34,20 +49,34 @@ struct ShortcutToolbarView: View {
     }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(layoutManager.selectedGroupItems) { item in
-                    Button {
-                        onKeyTapped(item)
-                    } label: {
-                        Text(item.displayLabel)
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(.thinMaterial, in: Capsule())
+        VStack(alignment: .leading, spacing: 6) {
+            if !pendingModifiers.isEmpty {
+                Text("Pending: \(pendingModifierLabel)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(layoutManager.selectedGroupItems) { item in
+                        let highlighted = isModifierHighlighted(item)
+                        Button {
+                            onKeyTapped(item)
+                        } label: {
+                            Text(item.displayLabel)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(highlighted ? Color.white : Color.primary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule()
+                                        .fill(highlighted ? Color.accentColor : Color(.secondarySystemBackground))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSending)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isSending)
                 }
             }
         }

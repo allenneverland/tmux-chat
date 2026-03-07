@@ -3,6 +3,7 @@ import SwiftUI
 private enum ShortcutKeyInputSource: String, CaseIterable, Identifiable {
     case keyboard
     case special
+    case modifierOnly
 
     var id: String { rawValue }
 
@@ -12,15 +13,9 @@ private enum ShortcutKeyInputSource: String, CaseIterable, Identifiable {
             return "iOS Keyboard"
         case .special:
             return "Special Key"
+        case .modifierOnly:
+            return "Modifier"
         }
-    }
-}
-
-private struct CurrentRowFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [UUID: CGRect] = [:]
-
-    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 
@@ -31,17 +26,13 @@ struct ShortcutSettingsView: View {
     @State private var showRenameGroupAlert = false
     @State private var renameGroupID: UUID?
     @State private var renameGroupName = ""
+    @State private var isAddKeyFormVisible = false
 
     @State private var draftModifiers: Set<ShortcutModifier> = []
     @State private var keyInputSource: ShortcutKeyInputSource = .keyboard
     @State private var keyboardInput: String = ""
     @State private var selectedSpecialKeyID: String = ShortcutCatalog.iosMissingKeys.first?.id ?? ""
-
-    @State private var currentRowItemFrames: [UUID: CGRect] = [:]
-    @State private var draggingShortcutID: UUID?
-    @State private var draggingOffsetX: CGFloat = 0
-
-    private let currentRowCoordinateSpace = "ShortcutSettings.CurrentRow"
+    @State private var selectedModifierOnly: ShortcutModifier = .control
 
     private var specialKeys: [ShortcutCatalogKey] {
         ShortcutCatalog.iosMissingKeys
@@ -64,24 +55,35 @@ struct ShortcutSettingsView: View {
                 return nil
             }
             return ShortcutBaseKey(label: selectedSpecialKey.label, token: selectedSpecialKey.tmuxToken)
+        case .modifierOnly:
+            return nil
         }
     }
 
     private var draftPreviewLabel: String? {
-        guard let base = draftBaseKey else {
-            return nil
+        switch keyInputSource {
+        case .modifierOnly:
+            return selectedModifierOnly.displayName
+        case .keyboard, .special:
+            guard let base = draftBaseKey else {
+                return nil
+            }
+            return TmuxShortcutTokenBuilder.displayLabel(baseLabel: base.label, modifiers: draftModifiers)
         }
-        return TmuxShortcutTokenBuilder.displayLabel(baseLabel: base.label, modifiers: draftModifiers)
     }
 
     private var draftToken: String? {
-        guard let base = draftBaseKey else {
+        guard let base = draftBaseKey,
+              keyInputSource != .modifierOnly else {
             return nil
         }
         return TmuxShortcutTokenBuilder.token(baseToken: base.token, modifiers: draftModifiers)
     }
 
     private var canAddDraft: Bool {
+        if keyInputSource == .modifierOnly {
+            return true
+        }
         guard let token = draftToken else {
             return false
         }
@@ -91,11 +93,13 @@ struct ShortcutSettingsView: View {
     var body: some View {
         List {
             groupsSection
-            selectedRowSection
-            addKeySection
+            shortcutsSection
         }
         .navigationTitle("Shortcut Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            EditButton()
+        }
         .alert("Add Group", isPresented: $showAddGroupAlert) {
             TextField("Group name", text: $addGroupName)
             Button("Cancel", role: .cancel) {
@@ -132,6 +136,9 @@ struct ShortcutSettingsView: View {
         }
         .onChange(of: keyboardInput) { _, raw in
             normalizeKeyboardInput(raw)
+        }
+        .onChange(of: layoutManager.selectedGroupID) { _, _ in
+            isAddKeyFormVisible = false
         }
     }
 
@@ -189,199 +196,137 @@ struct ShortcutSettingsView: View {
     }
 
     @ViewBuilder
-    private var selectedRowSection: some View {
+    private var shortcutsSection: some View {
         if let selectedGroup = layoutManager.selectedGroup {
             Section {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        if selectedGroup.items.isEmpty {
-                            Text("No keys in current row")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 8)
-                        } else {
-                            ForEach(selectedGroup.items) { item in
-                                currentRowChip(item: item, groupID: selectedGroup.id)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 2)
-                }
-                .coordinateSpace(name: currentRowCoordinateSpace)
-                .scrollDisabled(draggingShortcutID != nil)
-                .onPreferenceChange(CurrentRowFramePreferenceKey.self) { frames in
-                    currentRowItemFrames = frames
-                }
-            } header: {
-                Text("Current Row")
-            } footer: {
-                Text("Drag keys here to reorder. Keys in this row appear in the shortcut toolbar.")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var addKeySection: some View {
-        if let selectedGroup = layoutManager.selectedGroup {
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Modifiers")
-                        .font(.caption.weight(.semibold))
+                if selectedGroup.items.isEmpty {
+                    Text("No shortcuts in this group")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(ShortcutModifier.allCases) { modifier in
-                                Button {
-                                    toggleModifier(modifier)
-                                } label: {
-                                    Text(modifier.displayName)
-                                        .font(.caption.weight(.semibold))
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 7)
-                                        .foregroundStyle(
-                                            draftModifiers.contains(modifier) ? Color.white : Color.primary
-                                        )
-                                        .background(
-                                            Capsule()
-                                                .fill(
-                                                    draftModifiers.contains(modifier)
-                                                        ? Color.accentColor
-                                                        : Color(.systemGray5)
-                                                )
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
                 }
 
-                Picker("Key Source", selection: $keyInputSource) {
-                    ForEach(ShortcutKeyInputSource.allCases) { source in
-                        Text(source.title).tag(source)
-                    }
+                ForEach(selectedGroup.items) { item in
+                    shortcutRow(item)
                 }
-                .pickerStyle(.segmented)
-
-                switch keyInputSource {
-                case .keyboard:
-                    TextField("Tap one key on iOS keyboard", text: $keyboardInput)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                case .special:
-                    Picker("Special Key", selection: $selectedSpecialKeyID) {
-                        ForEach(specialKeys) { key in
-                            Text(key.label).tag(key.id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .disabled(specialKeys.isEmpty)
+                .onDelete { offsets in
+                    layoutManager.deleteItems(in: selectedGroup.id, at: offsets)
                 }
-
-                LabeledContent("Preview") {
-                    Text(draftPreviewLabel ?? "-")
-                        .foregroundStyle(.secondary)
+                .onMove { source, destination in
+                    layoutManager.moveItems(in: selectedGroup.id, from: source, to: destination)
                 }
 
                 Button {
-                    addDraftShortcut(to: selectedGroup.id)
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isAddKeyFormVisible.toggle()
+                    }
                 } label: {
-                    Label("Add to Current Row", systemImage: "plus.circle.fill")
+                    Label(
+                        isAddKeyFormVisible ? "Hide Add Key Form" : "Add Key",
+                        systemImage: isAddKeyFormVisible ? "chevron.up.circle" : "plus.circle.fill"
+                    )
                 }
-                .disabled(!canAddDraft)
+
+                if isAddKeyFormVisible {
+                    addKeyForm(groupID: selectedGroup.id)
+                }
             } header: {
-                Text("Add Key")
+                Text("Shortcuts")
             } footer: {
-                Text("Select any number of modifiers, then pick one base key. Example: Ctrl + Shift + R.")
+                Text("Shortcuts are shown in toolbar order. Use Edit to reorder or remove.")
             }
         }
     }
 
-    private func currentRowChip(item: ShortcutItem, groupID: UUID) -> some View {
-        HStack(spacing: 4) {
+    private func shortcutRow(_ item: ShortcutItem) -> some View {
+        HStack(spacing: 12) {
             Text(item.displayLabel)
-                .font(.caption.weight(.semibold))
+                .font(.body)
+
+            Spacer()
+
+            Text(item.sendToken ?? "Modifier")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func addKeyForm(groupID: UUID) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if keyInputSource != .modifierOnly {
+                Text("Modifiers")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(ShortcutModifier.allCases) { modifier in
+                            Button {
+                                toggleModifier(modifier)
+                            } label: {
+                                Text(modifier.displayName)
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
+                                    .foregroundStyle(
+                                        draftModifiers.contains(modifier) ? Color.white : Color.primary
+                                    )
+                                    .background(
+                                        Capsule()
+                                            .fill(
+                                                draftModifiers.contains(modifier)
+                                                    ? Color.accentColor
+                                                    : Color(.systemGray5)
+                                            )
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            Picker("Key Source", selection: $keyInputSource) {
+                ForEach(ShortcutKeyInputSource.allCases) { source in
+                    Text(source.title).tag(source)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            switch keyInputSource {
+            case .keyboard:
+                TextField("Tap one key on iOS keyboard", text: $keyboardInput)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            case .special:
+                Picker("Special Key", selection: $selectedSpecialKeyID) {
+                    ForEach(specialKeys) { key in
+                        Text(key.label).tag(key.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .disabled(specialKeys.isEmpty)
+            case .modifierOnly:
+                Picker("Modifier", selection: $selectedModifierOnly) {
+                    ForEach(ShortcutModifier.allCases) { modifier in
+                        Text(modifier.displayName).tag(modifier)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            LabeledContent("Preview") {
+                Text(draftPreviewLabel ?? "-")
+                    .foregroundStyle(.secondary)
+            }
 
             Button {
-                layoutManager.removeItem(item.id, from: groupID)
+                addDraftShortcut(to: groupID)
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.caption)
+                Label("Add to Shortcut List", systemImage: "plus.circle.fill")
             }
-            .buttonStyle(.plain)
+            .disabled(!canAddDraft)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(.thinMaterial, in: Capsule())
-        .overlay(alignment: .center) {
-            GeometryReader { proxy in
-                Color.clear
-                    .preference(
-                        key: CurrentRowFramePreferenceKey.self,
-                        value: [item.id: proxy.frame(in: .named(currentRowCoordinateSpace))]
-                    )
-            }
-        }
-        .offset(x: draggingShortcutID == item.id ? draggingOffsetX : 0)
-        .zIndex(draggingShortcutID == item.id ? 1 : 0)
-        .gesture(reorderGesture(for: item.id, groupID: groupID), including: .gesture)
-        .animation(.easeInOut(duration: 0.12), value: layoutManager.selectedGroupItems.map(\.id))
-    }
-
-    private func reorderGesture(for itemID: UUID, groupID: UUID) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.15)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(currentRowCoordinateSpace)))
-            .onChanged { value in
-                switch value {
-                case .first(true):
-                    if draggingShortcutID == nil {
-                        draggingShortcutID = itemID
-                        draggingOffsetX = 0
-                    }
-                case .second(true, let drag?):
-                    guard draggingShortcutID == itemID else {
-                        return
-                    }
-                    draggingOffsetX = drag.translation.width
-                    reorderWhileDragging(itemID: itemID, groupID: groupID, translationX: drag.translation.width)
-                default:
-                    break
-                }
-            }
-            .onEnded { _ in
-                draggingShortcutID = nil
-                draggingOffsetX = 0
-            }
-    }
-
-    private func reorderWhileDragging(itemID: UUID, groupID: UUID, translationX: CGFloat) {
-        guard let sourceFrame = currentRowItemFrames[itemID],
-              let group = layoutManager.groups.first(where: { $0.id == groupID }),
-              let sourceIndex = group.items.firstIndex(where: { $0.id == itemID }) else {
-            return
-        }
-
-        let draggingCenterX = sourceFrame.midX + translationX
-        let proposedDestination = group.items.reduce(into: 0) { partialResult, item in
-            guard item.id != itemID,
-                  let frame = currentRowItemFrames[item.id] else {
-                return
-            }
-
-            if draggingCenterX > frame.midX {
-                partialResult += 1
-            }
-        }
-
-        guard proposedDestination != sourceIndex else {
-            return
-        }
-
-        layoutManager.moveItem(in: groupID, itemID: itemID, to: proposedDestination)
+        .padding(.vertical, 4)
     }
 
     private func toggleModifier(_ modifier: ShortcutModifier) {
@@ -407,22 +352,28 @@ struct ShortcutSettingsView: View {
     }
 
     private func addDraftShortcut(to groupID: UUID) {
-        guard let base = draftBaseKey else {
-            return
+        let added: Bool
+        switch keyInputSource {
+        case .modifierOnly:
+            added = layoutManager.addModifierShortcut(selectedModifierOnly, to: groupID)
+        case .keyboard, .special:
+            guard let base = draftBaseKey else {
+                return
+            }
+            added = layoutManager.addShortcut(
+                baseLabel: base.label,
+                baseToken: base.token,
+                modifiers: draftModifiers,
+                to: groupID
+            )
         }
-
-        let added = layoutManager.addShortcut(
-            baseLabel: base.label,
-            baseToken: base.token,
-            modifiers: draftModifiers,
-            to: groupID
-        )
 
         if added {
             draftModifiers.removeAll()
             if keyInputSource == .keyboard {
                 keyboardInput = ""
             }
+            isAddKeyFormVisible = false
         }
     }
 

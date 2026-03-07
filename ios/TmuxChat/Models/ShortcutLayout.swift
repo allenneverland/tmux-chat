@@ -174,11 +174,18 @@ struct ShortcutBaseKey: Hashable {
     let token: String
 }
 
+enum ShortcutItemKind: String, Codable, Hashable {
+    case key
+    case modifierOnly
+}
+
 struct ShortcutItem: Identifiable, Codable, Hashable {
     var id: UUID
+    var kind: ShortcutItemKind
     var baseLabel: String
     var baseToken: String
     var modifiers: Set<ShortcutModifier>
+    var modifierOnly: ShortcutModifier?
 
     init(
         id: UUID = UUID(),
@@ -187,17 +194,59 @@ struct ShortcutItem: Identifiable, Codable, Hashable {
         modifiers: Set<ShortcutModifier> = []
     ) {
         self.id = id
+        self.kind = .key
         self.baseLabel = baseLabel
         self.baseToken = baseToken
         self.modifiers = modifiers
+        self.modifierOnly = nil
+    }
+
+    init(
+        id: UUID = UUID(),
+        modifierOnly: ShortcutModifier
+    ) {
+        self.id = id
+        self.kind = .modifierOnly
+        self.baseLabel = modifierOnly.displayName
+        self.baseToken = ""
+        self.modifiers = []
+        self.modifierOnly = modifierOnly
+    }
+
+    var isModifierOnly: Bool {
+        kind == .modifierOnly
+    }
+
+    var sendToken: String? {
+        guard kind == .key else {
+            return nil
+        }
+        return TmuxShortcutTokenBuilder.token(baseToken: baseToken, modifiers: modifiers)
     }
 
     var token: String {
-        TmuxShortcutTokenBuilder.token(baseToken: baseToken, modifiers: modifiers)
+        sendToken ?? (modifierOnly?.displayName ?? "")
     }
 
     var displayLabel: String {
-        TmuxShortcutTokenBuilder.displayLabel(baseLabel: baseLabel, modifiers: modifiers)
+        if let modifierOnly {
+            return modifierOnly.displayName
+        }
+        return TmuxShortcutTokenBuilder.displayLabel(baseLabel: baseLabel, modifiers: modifiers)
+    }
+
+    var isValidForStorage: Bool {
+        switch kind {
+        case .key:
+            let cleanLabel = baseLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanLabel.isEmpty,
+                  let sendToken else {
+                return false
+            }
+            return TmuxShortcutTokenBuilder.isValidKeyToken(sendToken)
+        case .modifierOnly:
+            return modifierOnly != nil
+        }
     }
 
     static func fromCatalog(id: String, extraModifiers: Set<ShortcutModifier> = []) -> ShortcutItem? {
@@ -211,17 +260,55 @@ struct ShortcutItem: Identifiable, Codable, Hashable {
         )
     }
 
+    static func modifier(_ modifier: ShortcutModifier) -> ShortcutItem {
+        ShortcutItem(modifierOnly: modifier)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id
+        case type
         case baseLabel
         case baseToken
         case modifiers
+        case modifier
         case keyID
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let itemID = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+
+        if let decodedType = try container.decodeIfPresent(ShortcutItemKind.self, forKey: .type) {
+            switch decodedType {
+            case .key:
+                guard let baseLabel = try container.decodeIfPresent(String.self, forKey: .baseLabel),
+                      let baseToken = try container.decodeIfPresent(String.self, forKey: .baseToken) else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .baseToken,
+                        in: container,
+                        debugDescription: "Shortcut key item is missing key data"
+                    )
+                }
+                let modifiers = try container.decodeIfPresent(Set<ShortcutModifier>.self, forKey: .modifiers) ?? []
+                self.init(id: itemID, baseLabel: baseLabel, baseToken: baseToken, modifiers: modifiers)
+                return
+            case .modifierOnly:
+                guard let modifier = try container.decodeIfPresent(ShortcutModifier.self, forKey: .modifier) else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .modifier,
+                        in: container,
+                        debugDescription: "Modifier-only shortcut item is missing modifier data"
+                    )
+                }
+                self.init(id: itemID, modifierOnly: modifier)
+                return
+            }
+        }
+
+        if let modifier = try container.decodeIfPresent(ShortcutModifier.self, forKey: .modifier) {
+            self.init(id: itemID, modifierOnly: modifier)
+            return
+        }
 
         if let baseLabel = try container.decodeIfPresent(String.self, forKey: .baseLabel),
            let baseToken = try container.decodeIfPresent(String.self, forKey: .baseToken) {
@@ -251,9 +338,24 @@ struct ShortcutItem: Identifiable, Codable, Hashable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
-        try container.encode(baseLabel, forKey: .baseLabel)
-        try container.encode(baseToken, forKey: .baseToken)
-        try container.encode(modifiers, forKey: .modifiers)
+        try container.encode(kind, forKey: .type)
+        switch kind {
+        case .key:
+            try container.encode(baseLabel, forKey: .baseLabel)
+            try container.encode(baseToken, forKey: .baseToken)
+            try container.encode(modifiers, forKey: .modifiers)
+        case .modifierOnly:
+            guard let modifierOnly else {
+                throw EncodingError.invalidValue(
+                    self,
+                    EncodingError.Context(
+                        codingPath: container.codingPath,
+                        debugDescription: "Modifier-only shortcut item is missing modifier data"
+                    )
+                )
+            }
+            try container.encode(modifierOnly, forKey: .modifier)
+        }
     }
 }
 
@@ -339,6 +441,40 @@ enum TmuxShortcutTokenBuilder {
             let isASCIIControl = scalar.value < 32 || scalar.value == 127
             return scalar.isASCII && !isASCIIControl && !scalar.properties.isWhitespace
         }
+    }
+}
+
+struct ShortcutTapResolution: Hashable {
+    let tokenToSend: String?
+    let pendingModifiers: Set<ShortcutModifier>
+}
+
+enum ShortcutTapResolver {
+    static func resolveTap(
+        item: ShortcutItem,
+        pendingModifiers: Set<ShortcutModifier>
+    ) -> ShortcutTapResolution {
+        if let modifierOnly = item.modifierOnly {
+            var updatedPending = pendingModifiers
+            if updatedPending.contains(modifierOnly) {
+                updatedPending.remove(modifierOnly)
+            } else {
+                updatedPending.insert(modifierOnly)
+            }
+            return ShortcutTapResolution(tokenToSend: nil, pendingModifiers: updatedPending)
+        }
+
+        guard item.kind == .key,
+              !item.baseToken.isEmpty else {
+            return ShortcutTapResolution(tokenToSend: nil, pendingModifiers: pendingModifiers)
+        }
+
+        let mergedModifiers = pendingModifiers.union(item.modifiers)
+        let token = TmuxShortcutTokenBuilder.token(baseToken: item.baseToken, modifiers: mergedModifiers)
+        guard TmuxShortcutTokenBuilder.isValidKeyToken(token) else {
+            return ShortcutTapResolution(tokenToSend: nil, pendingModifiers: pendingModifiers)
+        }
+        return ShortcutTapResolution(tokenToSend: token, pendingModifiers: [])
     }
 }
 
@@ -483,7 +619,32 @@ class ShortcutLayoutManager {
         }
 
         let item = ShortcutItem(baseLabel: cleanLabel, baseToken: baseToken, modifiers: modifiers)
-        guard TmuxShortcutTokenBuilder.isValidKeyToken(item.token) else {
+        guard item.isValidForStorage else {
+            return false
+        }
+
+        if let index {
+            let clamped = max(0, min(index, layout.groups[groupIndex].items.count))
+            layout.groups[groupIndex].items.insert(item, at: clamped)
+        } else {
+            layout.groups[groupIndex].items.append(item)
+        }
+        save()
+        return true
+    }
+
+    @discardableResult
+    func addModifierShortcut(
+        _ modifier: ShortcutModifier,
+        to groupID: UUID,
+        at index: Int? = nil
+    ) -> Bool {
+        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
+            return false
+        }
+
+        let item = ShortcutItem(modifierOnly: modifier)
+        guard item.isValidForStorage else {
             return false
         }
 
@@ -563,6 +724,36 @@ class ShortcutLayoutManager {
         save()
     }
 
+    func setItemOrder(in groupID: UUID, itemIDs: [UUID]) {
+        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
+            return
+        }
+
+        let existingItems = layout.groups[groupIndex].items
+        guard existingItems.count == itemIDs.count else {
+            return
+        }
+
+        let existingIDs = Set(existingItems.map(\.id))
+        let incomingIDs = Set(itemIDs)
+        guard existingIDs == incomingIDs else {
+            return
+        }
+
+        guard existingItems.map(\.id) != itemIDs else {
+            return
+        }
+
+        let itemByID = Dictionary(uniqueKeysWithValues: existingItems.map { ($0.id, $0) })
+        let reordered = itemIDs.compactMap { itemByID[$0] }
+        guard reordered.count == existingItems.count else {
+            return
+        }
+
+        layout.groups[groupIndex].items = reordered
+        save()
+    }
+
     func moveItems(in groupID: UUID, from source: IndexSet, to destination: Int) {
         guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
             return
@@ -591,8 +782,7 @@ class ShortcutLayoutManager {
         let sanitizedGroups = layout.groups.map { group in
             var next = group
             next.items = group.items.filter { item in
-                TmuxShortcutTokenBuilder.isValidKeyToken(item.token) &&
-                    !item.baseLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                item.isValidForStorage
             }
             return next
         }

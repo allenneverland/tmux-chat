@@ -99,6 +99,36 @@ struct ShortcutLayoutTests {
     }
 
     @Test
+    func layoutManagerPersistsModifierOnlyShortcut() throws {
+        let suiteName = "ShortcutLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let storageKey = "shortcut.layout.tests"
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let manager = ShortcutLayoutManager(userDefaults: defaults, userDefaultsKey: storageKey)
+        manager.addGroup(named: "Modifier")
+        let group = try #require(manager.selectedGroup)
+
+        let added = manager.addModifierShortcut(.control, to: group.id)
+        #expect(added)
+
+        let updated = try #require(manager.selectedGroup)
+        #expect(updated.items.count == 1)
+        #expect(updated.items[0].isModifierOnly)
+        #expect(updated.items[0].modifierOnly == .control)
+        #expect(updated.items[0].displayLabel == "Ctrl")
+        #expect(updated.items[0].sendToken == nil)
+
+        let reloaded = ShortcutLayoutManager(userDefaults: defaults, userDefaultsKey: storageKey)
+        let reloadedGroup = try #require(reloaded.groups.first { $0.id == group.id })
+        #expect(reloadedGroup.items.count == 1)
+        #expect(reloadedGroup.items[0].isModifierOnly)
+        #expect(reloadedGroup.items[0].modifierOnly == .control)
+
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test
     func addShortcutRejectsInvalidToken() throws {
         let suiteName = "ShortcutLayoutTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -170,6 +200,35 @@ struct ShortcutLayoutTests {
     }
 
     @Test
+    func setItemOrderAppliesSingleCommitOrder() throws {
+        let suiteName = "ShortcutLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let storageKey = "shortcut.layout.tests"
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let manager = ShortcutLayoutManager(userDefaults: defaults, userDefaultsKey: storageKey)
+        manager.addGroup(named: "SetOrder")
+        let group = try #require(manager.selectedGroup)
+
+        #expect(manager.addShortcut(baseLabel: "A", baseToken: "a", modifiers: [], to: group.id))
+        #expect(manager.addShortcut(baseLabel: "B", baseToken: "b", modifiers: [], to: group.id))
+        #expect(manager.addShortcut(baseLabel: "C", baseToken: "c", modifiers: [], to: group.id))
+
+        let snapshot = try #require(manager.selectedGroup)
+        let ids = snapshot.items.map(\.id)
+        manager.setItemOrder(in: group.id, itemIDs: [ids[2], ids[0], ids[1]])
+
+        let reordered = try #require(manager.selectedGroup)
+        #expect(reordered.items.map(\.baseToken) == ["c", "a", "b"])
+
+        let reloaded = ShortcutLayoutManager(userDefaults: defaults, userDefaultsKey: storageKey)
+        let reloadedGroup = try #require(reloaded.groups.first { $0.id == group.id })
+        #expect(reloadedGroup.items.map(\.baseToken) == ["c", "a", "b"])
+
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test
     func selectAdjacentGroupWrapsAtBounds() throws {
         let suiteName = "ShortcutLayoutTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -227,5 +286,34 @@ struct ShortcutLayoutTests {
         let item = try JSONDecoder().decode(ShortcutItem.self, from: Data(raw.utf8))
         #expect(item.token == "C-c")
         #expect(item.displayLabel == "Ctrl+C")
+    }
+
+    @Test
+    func shortcutTapResolverAppliesPendingModifiersToNextKey() {
+        let ctrlModifier = ShortcutItem(modifierOnly: .control)
+        let shiftModifier = ShortcutItem(modifierOnly: .shift)
+        let key = ShortcutItem(baseLabel: "K", baseToken: "k")
+
+        let first = ShortcutTapResolver.resolveTap(item: ctrlModifier, pendingModifiers: [])
+        #expect(first.tokenToSend == nil)
+        #expect(first.pendingModifiers == [.control])
+
+        let second = ShortcutTapResolver.resolveTap(item: shiftModifier, pendingModifiers: first.pendingModifiers)
+        #expect(second.tokenToSend == nil)
+        #expect(second.pendingModifiers == [.control, .shift])
+
+        let third = ShortcutTapResolver.resolveTap(item: key, pendingModifiers: second.pendingModifiers)
+        #expect(third.tokenToSend == "C-S-k")
+        #expect(third.pendingModifiers.isEmpty)
+    }
+
+    @Test
+    func shortcutTapResolverTogglesModifierWhenTappedTwice() {
+        let ctrlModifier = ShortcutItem(modifierOnly: .control)
+        let first = ShortcutTapResolver.resolveTap(item: ctrlModifier, pendingModifiers: [])
+        #expect(first.pendingModifiers == [.control])
+
+        let second = ShortcutTapResolver.resolveTap(item: ctrlModifier, pendingModifiers: first.pendingModifiers)
+        #expect(second.pendingModifiers.isEmpty)
     }
 }

@@ -130,6 +130,7 @@ struct PaneDetailView: View {
     @FocusState private var isInputFocused: Bool
     @State private var showCommandEditor = false
     @State private var showCommandPicker = false
+    @State private var pendingShortcutModifiers: Set<ShortcutModifier> = []
 
     init(pane: Pane, windowName: String) {
         self.pane = pane
@@ -157,8 +158,16 @@ struct PaneDetailView: View {
 
     private func sendShortcut(_ item: ShortcutItem) {
         guard !viewModel.isSending else { return }
+        let resolution = ShortcutTapResolver.resolveTap(
+            item: item,
+            pendingModifiers: pendingShortcutModifiers
+        )
+        pendingShortcutModifiers = resolution.pendingModifiers
+        guard let token = resolution.tokenToSend else {
+            return
+        }
         Task {
-            _ = await viewModel.sendKey(item.token)
+            _ = await viewModel.sendKey(token)
         }
     }
 
@@ -201,6 +210,7 @@ struct PaneDetailView: View {
 
             ShortcutToolbarView(
                 isSending: viewModel.isSending,
+                pendingModifiers: pendingShortcutModifiers,
                 onKeyTapped: { item in
                     sendShortcut(item)
                 }
