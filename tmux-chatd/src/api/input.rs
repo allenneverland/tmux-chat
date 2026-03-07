@@ -174,6 +174,9 @@ mod tests {
             .parse()
             .expect("valid probe=1 URI");
         let query = Query::<SendKeyQuery>::try_from_uri(&uri);
-        assert!(query.is_err(), "probe=1 must be rejected (bool-only contract)");
+        assert!(
+            query.is_err(),
+            "probe=1 must be rejected (bool-only contract)"
+        );
     }
 }
