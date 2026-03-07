@@ -35,6 +35,14 @@ struct ServerDetailView: View {
                 }
             }
 
+            Section("Input") {
+                NavigationLink {
+                    ShortcutSettingsView()
+                } label: {
+                    Label("Shortcut Settings", systemImage: "keyboard")
+                }
+            }
+
             Section("Maintenance") {
                 Button {
                     showRepairOnboarding = true

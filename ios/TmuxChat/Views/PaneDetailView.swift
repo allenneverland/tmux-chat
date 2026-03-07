@@ -130,9 +130,7 @@ struct PaneDetailView: View {
     @FocusState private var isInputFocused: Bool
     @State private var showCommandEditor = false
     @State private var showCommandPicker = false
-    @State private var showShortcutSettings = false
     @State private var shortcutToolbarCollapsed = true
-    @State private var shortcutModifierSelection = ShortcutModifierSelection()
 
     init(pane: Pane, windowName: String) {
         self.pane = pane
@@ -169,14 +167,10 @@ struct PaneDetailView: View {
         }
     }
 
-    private func sendShortcut(_ key: ShortcutCatalogKey, modifiers: Set<ShortcutModifier>) {
+    private func sendShortcut(_ item: ShortcutItem) {
         guard !viewModel.isSending else { return }
-        let token = TmuxShortcutTokenBuilder.token(baseToken: key.tmuxToken, modifiers: modifiers)
         Task {
-            let sent = await viewModel.sendKey(token)
-            if sent {
-                shortcutModifierSelection.clearOneShotStates()
-            }
+            _ = await viewModel.sendKey(item.token)
         }
     }
 
@@ -300,13 +294,9 @@ struct PaneDetailView: View {
 
             ShortcutToolbarView(
                 isCollapsed: $shortcutToolbarCollapsed,
-                modifierSelection: $shortcutModifierSelection,
                 isSending: viewModel.isSending,
-                onOpenSettings: {
-                    showShortcutSettings = true
-                },
-                onKeyTapped: { key, modifiers in
-                    sendShortcut(key, modifiers: modifiers)
+                onKeyTapped: { item in
+                    sendShortcut(item)
                 }
             )
             Divider()
@@ -398,10 +388,6 @@ struct PaneDetailView: View {
                 }
             )
             .modifier(iPadPagePresentationModifier())
-        }
-        .sheet(isPresented: $showShortcutSettings) {
-            ShortcutSettingsView()
-                .modifier(iPadPagePresentationModifier())
         }
         .task {
             await viewModel.startPolling()

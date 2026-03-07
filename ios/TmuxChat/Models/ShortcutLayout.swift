@@ -2,6 +2,28 @@ import Foundation
 import Observation
 import SwiftUI
 
+enum ShortcutModifier: String, CaseIterable, Codable, Hashable, Identifiable {
+    case control
+    case alt
+    case command
+    case shift
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .control:
+            return "Ctrl"
+        case .alt:
+            return "Alt"
+        case .command:
+            return "Cmd"
+        case .shift:
+            return "Shift"
+        }
+    }
+}
+
 enum ShortcutCatalogCategory: String, CaseIterable, Codable, Identifiable {
     case navigation
     case control
@@ -38,6 +60,21 @@ struct ShortcutCatalogKey: Identifiable, Codable, Hashable {
     let label: String
     let tmuxToken: String
     let category: ShortcutCatalogCategory
+    let defaultModifiers: Set<ShortcutModifier>
+
+    init(
+        id: String,
+        label: String,
+        tmuxToken: String,
+        category: ShortcutCatalogCategory,
+        defaultModifiers: Set<ShortcutModifier> = []
+    ) {
+        self.id = id
+        self.label = label
+        self.tmuxToken = tmuxToken
+        self.category = category
+        self.defaultModifiers = defaultModifiers
+    }
 }
 
 enum ShortcutCatalog {
@@ -63,10 +100,10 @@ enum ShortcutCatalog {
     ]
 
     static let editing: [ShortcutCatalogKey] = [
-        .init(id: "ctrl_a_letter", label: "a", tmuxToken: "a", category: .editing),
-        .init(id: "ctrl_c_letter", label: "c", tmuxToken: "c", category: .editing),
-        .init(id: "ctrl_d_letter", label: "d", tmuxToken: "d", category: .editing),
-        .init(id: "ctrl_z_letter", label: "z", tmuxToken: "z", category: .editing)
+        .init(id: "ctrl_a_letter", label: "A", tmuxToken: "a", category: .editing, defaultModifiers: [.control]),
+        .init(id: "ctrl_c_letter", label: "C", tmuxToken: "c", category: .editing, defaultModifiers: [.control]),
+        .init(id: "ctrl_d_letter", label: "D", tmuxToken: "d", category: .editing, defaultModifiers: [.control]),
+        .init(id: "ctrl_z_letter", label: "Z", tmuxToken: "z", category: .editing, defaultModifiers: [.control])
     ]
 
     static let symbols: [ShortcutCatalogKey] = [
@@ -119,18 +156,104 @@ enum ShortcutCatalog {
         Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
     }()
 
+    static let iosMissingKeyIDs: [String] = [
+        "escape", "tab", "enter", "backspace", "delete", "insert",
+        "up", "down", "left", "right", "home", "end", "page_up", "page_down"
+    ] + (1...12).map { "function_f\($0)" }
+
+    static let iosMissingKeys: [ShortcutCatalogKey] =
+        iosMissingKeyIDs.compactMap { byID[$0] }
+
     static func keys(for category: ShortcutCatalogCategory) -> [ShortcutCatalogKey] {
         all.filter { $0.category == category }
     }
 }
 
+struct ShortcutBaseKey: Hashable {
+    let label: String
+    let token: String
+}
+
 struct ShortcutItem: Identifiable, Codable, Hashable {
     var id: UUID
-    var keyID: String
+    var baseLabel: String
+    var baseToken: String
+    var modifiers: Set<ShortcutModifier>
 
-    init(id: UUID = UUID(), keyID: String) {
+    init(
+        id: UUID = UUID(),
+        baseLabel: String,
+        baseToken: String,
+        modifiers: Set<ShortcutModifier> = []
+    ) {
         self.id = id
-        self.keyID = keyID
+        self.baseLabel = baseLabel
+        self.baseToken = baseToken
+        self.modifiers = modifiers
+    }
+
+    var token: String {
+        TmuxShortcutTokenBuilder.token(baseToken: baseToken, modifiers: modifiers)
+    }
+
+    var displayLabel: String {
+        TmuxShortcutTokenBuilder.displayLabel(baseLabel: baseLabel, modifiers: modifiers)
+    }
+
+    static func fromCatalog(id: String, extraModifiers: Set<ShortcutModifier> = []) -> ShortcutItem? {
+        guard let key = ShortcutCatalog.byID[id] else {
+            return nil
+        }
+        return ShortcutItem(
+            baseLabel: key.label,
+            baseToken: key.tmuxToken,
+            modifiers: key.defaultModifiers.union(extraModifiers)
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case baseLabel
+        case baseToken
+        case modifiers
+        case keyID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let itemID = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+
+        if let baseLabel = try container.decodeIfPresent(String.self, forKey: .baseLabel),
+           let baseToken = try container.decodeIfPresent(String.self, forKey: .baseToken) {
+            let modifiers = try container.decodeIfPresent(Set<ShortcutModifier>.self, forKey: .modifiers) ?? []
+            self.init(id: itemID, baseLabel: baseLabel, baseToken: baseToken, modifiers: modifiers)
+            return
+        }
+
+        if let legacyKeyID = try container.decodeIfPresent(String.self, forKey: .keyID),
+           let legacy = ShortcutCatalog.byID[legacyKeyID] {
+            self.init(
+                id: itemID,
+                baseLabel: legacy.label,
+                baseToken: legacy.tmuxToken,
+                modifiers: legacy.defaultModifiers
+            )
+            return
+        }
+
+        throw DecodingError.dataCorruptedError(
+            forKey: .baseToken,
+            in: container,
+            debugDescription: "Shortcut item is missing key data"
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(baseLabel, forKey: .baseLabel)
+        try container.encode(baseToken, forKey: .baseToken)
+        try container.encode(modifiers, forKey: .modifiers)
     }
 }
 
@@ -151,81 +274,6 @@ struct ShortcutLayout: Codable, Hashable {
     var selectedGroupID: UUID?
 }
 
-enum ShortcutModifier: String, CaseIterable, Codable, Hashable, Identifiable {
-    case control
-    case alt
-    case command
-    case shift
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .control:
-            return "Ctrl"
-        case .alt:
-            return "Alt"
-        case .command:
-            return "Cmd"
-        case .shift:
-            return "Shift"
-        }
-    }
-}
-
-enum ShortcutModifierState: Int, Codable, Hashable {
-    case off
-    case oneShot
-    case locked
-
-    mutating func cycle() {
-        switch self {
-        case .off:
-            self = .oneShot
-        case .oneShot:
-            self = .locked
-        case .locked:
-            self = .off
-        }
-    }
-
-    var isActive: Bool {
-        self != .off
-    }
-}
-
-struct ShortcutModifierSelection: Codable, Hashable {
-    private(set) var states: [ShortcutModifier: ShortcutModifierState] = {
-        Dictionary(uniqueKeysWithValues: ShortcutModifier.allCases.map { ($0, .off) })
-    }()
-
-    func state(for modifier: ShortcutModifier) -> ShortcutModifierState {
-        states[modifier] ?? .off
-    }
-
-    mutating func cycle(_ modifier: ShortcutModifier) {
-        var value = states[modifier] ?? .off
-        value.cycle()
-        states[modifier] = value
-    }
-
-    mutating func clearOneShotStates() {
-        for modifier in ShortcutModifier.allCases {
-            if states[modifier] == .oneShot {
-                states[modifier] = .off
-            }
-        }
-    }
-
-    var activeModifiers: Set<ShortcutModifier> {
-        Set(
-            states
-                .filter { $0.value.isActive }
-                .map { $0.key }
-        )
-    }
-}
-
 enum TmuxShortcutTokenBuilder {
     static func token(baseToken: String, modifiers: Set<ShortcutModifier>) -> String {
         var prefixes: [String] = []
@@ -243,6 +291,54 @@ enum TmuxShortcutTokenBuilder {
             return baseToken
         }
         return prefixes.joined(separator: "-") + "-" + baseToken
+    }
+
+    static func displayLabel(baseLabel: String, modifiers: Set<ShortcutModifier>) -> String {
+        let ordered = ShortcutModifier.allCases
+            .filter { modifiers.contains($0) }
+            .map(\.displayName)
+
+        guard !ordered.isEmpty else {
+            return baseLabel
+        }
+        return ordered.joined(separator: "+") + "+" + baseLabel
+    }
+
+    static func keyboardBaseKey(from raw: String) -> ShortcutBaseKey? {
+        guard raw.count == 1,
+              raw.unicodeScalars.count == 1,
+              let scalar = raw.unicodeScalars.first,
+              scalar.isASCII else {
+            return nil
+        }
+
+        if scalar.value == 32 {
+            return ShortcutBaseKey(label: "Space", token: "Space")
+        }
+
+        let isASCIIControl = scalar.value < 32 || scalar.value == 127
+        guard !scalar.properties.isWhitespace, !isASCIIControl else {
+            return nil
+        }
+
+        if (65...90).contains(scalar.value) || (97...122).contains(scalar.value) {
+            let letter = String(Character(scalar)).lowercased()
+            return ShortcutBaseKey(label: letter.uppercased(), token: letter)
+        }
+
+        let symbol = String(Character(scalar))
+        return ShortcutBaseKey(label: symbol, token: symbol)
+    }
+
+    static func isValidKeyToken(_ token: String) -> Bool {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 64, trimmed == token else {
+            return false
+        }
+        return trimmed.unicodeScalars.allSatisfy { scalar in
+            let isASCIIControl = scalar.value < 32 || scalar.value == 127
+            return scalar.isASCII && !isASCIIControl && !scalar.properties.isWhitespace
+        }
     }
 }
 
@@ -294,13 +390,8 @@ class ShortcutLayoutManager {
         return layout.groups.first { $0.id == id } ?? layout.groups.first
     }
 
-    var selectedGroupKeys: [ShortcutCatalogKey] {
-        guard let selectedGroup else { return [] }
-        return selectedGroup.items.compactMap { ShortcutCatalog.byID[$0.keyID] }
-    }
-
-    func key(for item: ShortcutItem) -> ShortcutCatalogKey? {
-        ShortcutCatalog.byID[item.keyID]
+    var selectedGroupItems: [ShortcutItem] {
+        selectedGroup?.items ?? []
     }
 
     func selectGroup(_ id: UUID) {
@@ -349,19 +440,98 @@ class ShortcutLayoutManager {
         save()
     }
 
-    func addKey(_ keyID: String, to groupID: UUID, at index: Int? = nil) {
-        guard ShortcutCatalog.byID[keyID] != nil,
+    @discardableResult
+    func addShortcut(
+        baseLabel: String,
+        baseToken: String,
+        modifiers: Set<ShortcutModifier>,
+        to groupID: UUID,
+        at index: Int? = nil
+    ) -> Bool {
+        let cleanLabel = baseLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanLabel.isEmpty,
               let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
-            return
+            return false
         }
 
-        let item = ShortcutItem(keyID: keyID)
+        let item = ShortcutItem(baseLabel: cleanLabel, baseToken: baseToken, modifiers: modifiers)
+        guard TmuxShortcutTokenBuilder.isValidKeyToken(item.token) else {
+            return false
+        }
+
         if let index {
             let clamped = max(0, min(index, layout.groups[groupIndex].items.count))
             layout.groups[groupIndex].items.insert(item, at: clamped)
         } else {
             layout.groups[groupIndex].items.append(item)
         }
+        save()
+        return true
+    }
+
+    @discardableResult
+    func addCatalogKey(
+        _ key: ShortcutCatalogKey,
+        modifiers: Set<ShortcutModifier>,
+        to groupID: UUID,
+        at index: Int? = nil
+    ) -> Bool {
+        addShortcut(
+            baseLabel: key.label,
+            baseToken: key.tmuxToken,
+            modifiers: key.defaultModifiers.union(modifiers),
+            to: groupID,
+            at: index
+        )
+    }
+
+    func moveItem(in groupID: UUID, itemID: UUID, before targetID: UUID?) {
+        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
+            return
+        }
+        guard itemID != targetID else {
+            return
+        }
+
+        var items = layout.groups[groupIndex].items
+        guard let sourceIndex = items.firstIndex(where: { $0.id == itemID }) else {
+            return
+        }
+
+        let moved = items.remove(at: sourceIndex)
+
+        let destinationIndex: Int
+        if let targetID,
+           let targetIndex = items.firstIndex(where: { $0.id == targetID }) {
+            destinationIndex = targetIndex
+        } else {
+            destinationIndex = items.count
+        }
+
+        items.insert(moved, at: destinationIndex)
+        layout.groups[groupIndex].items = items
+        save()
+    }
+
+    func moveItem(in groupID: UUID, itemID: UUID, to destinationIndex: Int) {
+        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
+            return
+        }
+
+        var items = layout.groups[groupIndex].items
+        guard !items.isEmpty,
+              let sourceIndex = items.firstIndex(where: { $0.id == itemID }) else {
+            return
+        }
+
+        let clampedDestination = max(0, min(destinationIndex, items.count - 1))
+        guard sourceIndex != clampedDestination else {
+            return
+        }
+
+        let moved = items.remove(at: sourceIndex)
+        items.insert(moved, at: clampedDestination)
+        layout.groups[groupIndex].items = items
         save()
     }
 
@@ -389,18 +559,16 @@ class ShortcutLayoutManager {
         save()
     }
 
-    func handleDropPayload(_ payload: String, to groupID: UUID) {
-        let parts = payload.split(separator: ":", maxSplits: 1).map(String.init)
-        guard parts.count == 2, parts[0] == "catalog" else { return }
-        addKey(parts[1], to: groupID)
-    }
-
     private static func sanitize(_ layout: ShortcutLayout) -> ShortcutLayout {
-        var sanitizedGroups = layout.groups.map { group in
+        let sanitizedGroups = layout.groups.map { group in
             var next = group
-            next.items = group.items.filter { ShortcutCatalog.byID[$0.keyID] != nil }
+            next.items = group.items.filter { item in
+                TmuxShortcutTokenBuilder.isValidKeyToken(item.token) &&
+                    !item.baseLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
             return next
         }
+
         if sanitizedGroups.isEmpty {
             return defaultLayout()
         }
@@ -418,29 +586,28 @@ class ShortcutLayoutManager {
         let nav = ShortcutGroup(
             name: "Nav",
             items: [
-                ShortcutItem(keyID: "up"),
-                ShortcutItem(keyID: "down"),
-                ShortcutItem(keyID: "left"),
-                ShortcutItem(keyID: "right"),
-                ShortcutItem(keyID: "home"),
-                ShortcutItem(keyID: "end"),
-                ShortcutItem(keyID: "page_up"),
-                ShortcutItem(keyID: "page_down")
+                ShortcutItem.fromCatalog(id: "up")!,
+                ShortcutItem.fromCatalog(id: "down")!,
+                ShortcutItem.fromCatalog(id: "left")!,
+                ShortcutItem.fromCatalog(id: "right")!,
+                ShortcutItem.fromCatalog(id: "home")!,
+                ShortcutItem.fromCatalog(id: "end")!,
+                ShortcutItem.fromCatalog(id: "page_up")!,
+                ShortcutItem.fromCatalog(id: "page_down")!
             ]
         )
 
         let control = ShortcutGroup(
             name: "Control",
             items: [
-                ShortcutItem(keyID: "escape"),
-                ShortcutItem(keyID: "tab"),
-                ShortcutItem(keyID: "backspace"),
-                ShortcutItem(keyID: "enter"),
-                ShortcutItem(keyID: "space"),
-                ShortcutItem(keyID: "letter_a"),
-                ShortcutItem(keyID: "letter_c"),
-                ShortcutItem(keyID: "letter_d"),
-                ShortcutItem(keyID: "letter_z")
+                ShortcutItem.fromCatalog(id: "escape")!,
+                ShortcutItem.fromCatalog(id: "tab")!,
+                ShortcutItem.fromCatalog(id: "backspace")!,
+                ShortcutItem.fromCatalog(id: "enter")!,
+                ShortcutItem.fromCatalog(id: "letter_a", extraModifiers: [.control])!,
+                ShortcutItem.fromCatalog(id: "letter_c", extraModifiers: [.control])!,
+                ShortcutItem.fromCatalog(id: "letter_d", extraModifiers: [.control])!,
+                ShortcutItem.fromCatalog(id: "letter_z", extraModifiers: [.control])!
             ]
         )
 
