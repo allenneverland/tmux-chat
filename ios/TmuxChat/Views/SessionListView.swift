@@ -761,9 +761,9 @@ class SessionListViewModel {
             let activeServerID = ServerConfigManager.shared.activeServer?.deviceId
             if validatedCapabilitiesServerID != activeServerID {
                 let caps = try await api.getCapabilities(forceRefresh: true)
-                guard caps.supportsRequiredShortcutContract else {
+                guard caps.supportsInputEventsContract else {
                     connectionState = .unsupportedServer(
-                        "Current host tmux-chatd does not satisfy required control-plane contract (schema v3 + pane_key_probe). Upgrade host tmux-chatd and reconnect."
+                        "Current host tmux-chatd does not satisfy required control-plane contract (schema v5 + pane_input_events). Upgrade host tmux-chatd and reconnect."
                     )
                     updateActiveServerConnectionState("unsupported_server")
                     sessions = []

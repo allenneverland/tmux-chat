@@ -29,6 +29,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         AppDelegate.shared = self
+        ShortcutLayoutMigration.clearLegacyCustomLayout()
         UNUserNotificationCenter.current().delegate = self
         NotificationCenter.default.addObserver(
             self,
@@ -48,7 +49,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
                 switch settings.authorizationStatus {
-                case .authorized, .provisional:
+                case .authorized, .provisional, .ephemeral:
                     UIApplication.shared.registerForRemoteNotifications()
                 case .notDetermined:
                     self.requestNotificationPermission()

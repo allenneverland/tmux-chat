@@ -1,12 +1,13 @@
 import Foundation
+import GameController
 import Observation
 import SwiftUI
 
-enum ShortcutModifier: String, CaseIterable, Codable, Hashable, Identifiable {
+enum ShortcutModifier: String, CaseIterable, Hashable, Identifiable {
     case control
     case alt
-    case command
     case shift
+    case meta
 
     var id: String { rawValue }
 
@@ -16,850 +17,504 @@ enum ShortcutModifier: String, CaseIterable, Codable, Hashable, Identifiable {
             return "Ctrl"
         case .alt:
             return "Alt"
-        case .command:
-            return "Cmd"
         case .shift:
             return "Shift"
+        case .meta:
+            return "Meta"
         }
     }
 }
 
-enum ShortcutCatalogCategory: String, CaseIterable, Codable, Identifiable {
-    case navigation
-    case control
-    case editing
-    case symbols
-    case numbers
-    case letters
-    case function
+enum ShortcutModifierActivationState: Hashable {
+    case off
+    case oneShot
+    case locked
 
-    var id: String { rawValue }
-
-    var title: String {
+    var isActive: Bool {
         switch self {
-        case .navigation:
-            return "Navigation"
-        case .control:
-            return "Control"
-        case .editing:
-            return "Editing"
-        case .symbols:
-            return "Symbols"
-        case .numbers:
-            return "Numbers"
-        case .letters:
-            return "Letters"
-        case .function:
-            return "Function"
+        case .off:
+            return false
+        case .oneShot, .locked:
+            return true
         }
     }
 }
 
-struct ShortcutCatalogKey: Identifiable, Codable, Hashable {
-    let id: String
-    let label: String
-    let tmuxToken: String
-    let category: ShortcutCatalogCategory
-    let defaultModifiers: Set<ShortcutModifier>
-
-    init(
-        id: String,
-        label: String,
-        tmuxToken: String,
-        category: ShortcutCatalogCategory,
-        defaultModifiers: Set<ShortcutModifier> = []
-    ) {
-        self.id = id
-        self.label = label
-        self.tmuxToken = tmuxToken
-        self.category = category
-        self.defaultModifiers = defaultModifiers
-    }
-}
-
-enum ShortcutCatalog {
-    static let navigation: [ShortcutCatalogKey] = [
-        .init(id: "up", label: "Up", tmuxToken: "Up", category: .navigation),
-        .init(id: "down", label: "Down", tmuxToken: "Down", category: .navigation),
-        .init(id: "left", label: "Left", tmuxToken: "Left", category: .navigation),
-        .init(id: "right", label: "Right", tmuxToken: "Right", category: .navigation),
-        .init(id: "home", label: "Home", tmuxToken: "Home", category: .navigation),
-        .init(id: "end", label: "End", tmuxToken: "End", category: .navigation),
-        .init(id: "page_up", label: "PageUp", tmuxToken: "PageUp", category: .navigation),
-        .init(id: "page_down", label: "PageDn", tmuxToken: "PageDown", category: .navigation)
-    ]
-
-    static let control: [ShortcutCatalogKey] = [
-        .init(id: "escape", label: "Esc", tmuxToken: "Escape", category: .control),
-        .init(id: "tab", label: "Tab", tmuxToken: "Tab", category: .control),
-        .init(id: "enter", label: "Enter", tmuxToken: "Enter", category: .control),
-        .init(id: "backspace", label: "Backspace", tmuxToken: "BSpace", category: .control),
-        .init(id: "delete", label: "Delete", tmuxToken: "DC", category: .control),
-        .init(id: "insert", label: "Insert", tmuxToken: "IC", category: .control),
-        .init(id: "space", label: "Space", tmuxToken: "Space", category: .control)
-    ]
-
-    static let editing: [ShortcutCatalogKey] = [
-        .init(id: "ctrl_a_letter", label: "A", tmuxToken: "a", category: .editing, defaultModifiers: [.control]),
-        .init(id: "ctrl_c_letter", label: "C", tmuxToken: "c", category: .editing, defaultModifiers: [.control]),
-        .init(id: "ctrl_d_letter", label: "D", tmuxToken: "d", category: .editing, defaultModifiers: [.control]),
-        .init(id: "ctrl_z_letter", label: "Z", tmuxToken: "z", category: .editing, defaultModifiers: [.control])
-    ]
-
-    static let symbols: [ShortcutCatalogKey] = [
-        .init(id: "symbol_dot", label: ".", tmuxToken: ".", category: .symbols),
-        .init(id: "symbol_comma", label: ",", tmuxToken: ",", category: .symbols),
-        .init(id: "symbol_slash", label: "/", tmuxToken: "/", category: .symbols),
-        .init(id: "symbol_backslash", label: "\\", tmuxToken: "\\", category: .symbols),
-        .init(id: "symbol_semicolon", label: ";", tmuxToken: ";", category: .symbols),
-        .init(id: "symbol_quote", label: "'", tmuxToken: "'", category: .symbols),
-        .init(id: "symbol_minus", label: "-", tmuxToken: "-", category: .symbols),
-        .init(id: "symbol_equal", label: "=", tmuxToken: "=", category: .symbols),
-        .init(id: "symbol_left_bracket", label: "[", tmuxToken: "[", category: .symbols),
-        .init(id: "symbol_right_bracket", label: "]", tmuxToken: "]", category: .symbols),
-        .init(id: "symbol_backtick", label: "`", tmuxToken: "`", category: .symbols)
-    ]
-
-    static let numbers: [ShortcutCatalogKey] = (0...9).map { number in
-        ShortcutCatalogKey(
-            id: "number_\(number)",
-            label: "\(number)",
-            tmuxToken: "\(number)",
-            category: .numbers
-        )
-    }
-
-    static let letters: [ShortcutCatalogKey] = (0..<26).map { offset in
-        let scalar = UnicodeScalar(97 + offset)!
-        let letter = String(Character(scalar))
-        return ShortcutCatalogKey(
-            id: "letter_\(letter)",
-            label: letter.uppercased(),
-            tmuxToken: letter,
-            category: .letters
-        )
-    }
-
-    static let function: [ShortcutCatalogKey] = (1...12).map { number in
-        ShortcutCatalogKey(
-            id: "function_f\(number)",
-            label: "F\(number)",
-            tmuxToken: "F\(number)",
-            category: .function
-        )
-    }
-
-    static let all: [ShortcutCatalogKey] =
-        navigation + control + editing + symbols + numbers + letters + function
-
-    static let byID: [String: ShortcutCatalogKey] = {
-        Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+struct ShortcutModifierStateMachine: Hashable {
+    private var states: [ShortcutModifier: ShortcutModifierActivationState] = {
+        Dictionary(uniqueKeysWithValues: ShortcutModifier.allCases.map { ($0, .off) })
     }()
 
-    static let iosMissingKeyIDs: [String] = [
-        "escape", "tab", "enter", "backspace", "delete", "insert",
-        "up", "down", "left", "right", "home", "end", "page_up", "page_down"
-    ] + (1...12).map { "function_f\($0)" }
-
-    static let iosMissingKeys: [ShortcutCatalogKey] =
-        iosMissingKeyIDs.compactMap { byID[$0] }
-
-    static func keys(for category: ShortcutCatalogCategory) -> [ShortcutCatalogKey] {
-        all.filter { $0.category == category }
-    }
-}
-
-struct ShortcutBaseKey: Hashable {
-    let label: String
-    let token: String
-}
-
-enum ShortcutItemKind: String, Codable, Hashable {
-    case key
-    case modifierOnly
-}
-
-struct ShortcutItem: Identifiable, Codable, Hashable {
-    var id: UUID
-    var kind: ShortcutItemKind
-    var baseLabel: String
-    var baseToken: String
-    var modifiers: Set<ShortcutModifier>
-    var modifierOnly: ShortcutModifier?
-
-    init(
-        id: UUID = UUID(),
-        baseLabel: String,
-        baseToken: String,
-        modifiers: Set<ShortcutModifier> = []
-    ) {
-        self.id = id
-        self.kind = .key
-        self.baseLabel = baseLabel
-        self.baseToken = baseToken
-        self.modifiers = modifiers
-        self.modifierOnly = nil
-    }
-
-    init(
-        id: UUID = UUID(),
-        modifierOnly: ShortcutModifier
-    ) {
-        self.id = id
-        self.kind = .modifierOnly
-        self.baseLabel = modifierOnly.displayName
-        self.baseToken = ""
-        self.modifiers = []
-        self.modifierOnly = modifierOnly
-    }
-
-    var isModifierOnly: Bool {
-        kind == .modifierOnly
-    }
-
-    var sendToken: String? {
-        guard kind == .key else {
-            return nil
-        }
-        return TmuxShortcutTokenBuilder.token(baseToken: baseToken, modifiers: modifiers)
-    }
-
-    var token: String {
-        sendToken ?? (modifierOnly?.displayName ?? "")
-    }
-
-    var displayLabel: String {
-        if let modifierOnly {
-            return modifierOnly.displayName
-        }
-        return TmuxShortcutTokenBuilder.displayLabel(baseLabel: baseLabel, modifiers: modifiers)
-    }
-
-    var isValidForStorage: Bool {
-        switch kind {
-        case .key:
-            let cleanLabel = baseLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !cleanLabel.isEmpty,
-                  let sendToken else {
-                return false
-            }
-            return TmuxShortcutTokenBuilder.isValidKeyToken(sendToken)
-        case .modifierOnly:
-            return modifierOnly != nil
+    mutating func cycle(_ modifier: ShortcutModifier) {
+        switch state(for: modifier) {
+        case .off:
+            states[modifier] = .oneShot
+        case .oneShot:
+            states[modifier] = .locked
+        case .locked:
+            states[modifier] = .off
         }
     }
 
-    static func fromCatalog(id: String, extraModifiers: Set<ShortcutModifier> = []) -> ShortcutItem? {
-        guard let key = ShortcutCatalog.byID[id] else {
-            return nil
-        }
-        return ShortcutItem(
-            baseLabel: key.label,
-            baseToken: key.tmuxToken,
-            modifiers: key.defaultModifiers.union(extraModifiers)
-        )
-    }
-
-    static func modifier(_ modifier: ShortcutModifier) -> ShortcutItem {
-        ShortcutItem(modifierOnly: modifier)
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case type
-        case baseLabel
-        case baseToken
-        case modifiers
-        case modifier
-        case keyID
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let itemID = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-
-        if let decodedType = try container.decodeIfPresent(ShortcutItemKind.self, forKey: .type) {
-            switch decodedType {
-            case .key:
-                guard let baseLabel = try container.decodeIfPresent(String.self, forKey: .baseLabel),
-                      let baseToken = try container.decodeIfPresent(String.self, forKey: .baseToken) else {
-                    throw DecodingError.dataCorruptedError(
-                        forKey: .baseToken,
-                        in: container,
-                        debugDescription: "Shortcut key item is missing key data"
-                    )
-                }
-                let modifiers = try container.decodeIfPresent(Set<ShortcutModifier>.self, forKey: .modifiers) ?? []
-                self.init(id: itemID, baseLabel: baseLabel, baseToken: baseToken, modifiers: modifiers)
-                return
-            case .modifierOnly:
-                guard let modifier = try container.decodeIfPresent(ShortcutModifier.self, forKey: .modifier) else {
-                    throw DecodingError.dataCorruptedError(
-                        forKey: .modifier,
-                        in: container,
-                        debugDescription: "Modifier-only shortcut item is missing modifier data"
-                    )
-                }
-                self.init(id: itemID, modifierOnly: modifier)
-                return
-            }
-        }
-
-        if let modifier = try container.decodeIfPresent(ShortcutModifier.self, forKey: .modifier) {
-            self.init(id: itemID, modifierOnly: modifier)
-            return
-        }
-
-        if let baseLabel = try container.decodeIfPresent(String.self, forKey: .baseLabel),
-           let baseToken = try container.decodeIfPresent(String.self, forKey: .baseToken) {
-            let modifiers = try container.decodeIfPresent(Set<ShortcutModifier>.self, forKey: .modifiers) ?? []
-            self.init(id: itemID, baseLabel: baseLabel, baseToken: baseToken, modifiers: modifiers)
-            return
-        }
-
-        if let legacyKeyID = try container.decodeIfPresent(String.self, forKey: .keyID),
-           let legacy = ShortcutCatalog.byID[legacyKeyID] {
-            self.init(
-                id: itemID,
-                baseLabel: legacy.label,
-                baseToken: legacy.tmuxToken,
-                modifiers: legacy.defaultModifiers
-            )
-            return
-        }
-
-        throw DecodingError.dataCorruptedError(
-            forKey: .baseToken,
-            in: container,
-            debugDescription: "Shortcut item is missing key data"
-        )
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(kind, forKey: .type)
-        switch kind {
-        case .key:
-            try container.encode(baseLabel, forKey: .baseLabel)
-            try container.encode(baseToken, forKey: .baseToken)
-            try container.encode(modifiers, forKey: .modifiers)
-        case .modifierOnly:
-            guard let modifierOnly else {
-                throw EncodingError.invalidValue(
-                    self,
-                    EncodingError.Context(
-                        codingPath: container.codingPath,
-                        debugDescription: "Modifier-only shortcut item is missing modifier data"
-                    )
-                )
-            }
-            try container.encode(modifierOnly, forKey: .modifier)
+    mutating func clearAll() {
+        for modifier in ShortcutModifier.allCases {
+            states[modifier] = .off
         }
     }
-}
 
-struct ShortcutGroup: Identifiable, Codable, Hashable {
-    var id: UUID
-    var name: String
-    var items: [ShortcutItem]
-
-    init(id: UUID = UUID(), name: String, items: [ShortcutItem]) {
-        self.id = id
-        self.name = name
-        self.items = items
-    }
-}
-
-struct ShortcutLayout: Codable, Hashable {
-    var groups: [ShortcutGroup]
-    var selectedGroupID: UUID?
-}
-
-enum TmuxShortcutTokenBuilder {
-    static func token(baseToken: String, modifiers: Set<ShortcutModifier>) -> String {
-        var prefixes: [String] = []
-        if modifiers.contains(.control) {
-            prefixes.append("C")
+    mutating func consumeModifiers(base: Set<ShortcutModifier>) -> Set<ShortcutModifier> {
+        let active = activeModifiers
+        let merged = active.union(base)
+        for (modifier, state) in states where state == .oneShot {
+            states[modifier] = .off
         }
-        if modifiers.contains(.alt) || modifiers.contains(.command) {
-            prefixes.append("M")
-        }
-        if modifiers.contains(.shift) {
-            prefixes.append("S")
-        }
-
-        guard !prefixes.isEmpty else {
-            return baseToken
-        }
-        return prefixes.joined(separator: "-") + "-" + baseToken
+        return merged
     }
 
-    static func displayLabel(baseLabel: String, modifiers: Set<ShortcutModifier>) -> String {
-        let ordered = ShortcutModifier.allCases
-            .filter { modifiers.contains($0) }
+    func state(for modifier: ShortcutModifier) -> ShortcutModifierActivationState {
+        states[modifier] ?? .off
+    }
+
+    var activeModifiers: Set<ShortcutModifier> {
+        Set(states.compactMap { $0.value.isActive ? $0.key : nil })
+    }
+
+    var hasActiveModifiers: Bool {
+        !activeModifiers.isEmpty
+    }
+
+    var activeModifiersLabel: String {
+        ShortcutModifier.allCases
+            .filter { activeModifiers.contains($0) }
             .map(\.displayName)
+            .joined(separator: "+")
+    }
+}
 
-        guard !ordered.isEmpty else {
-            return baseLabel
-        }
-        return ordered.joined(separator: "+") + "+" + baseLabel
+struct ShortcutInputDescriptor: Hashable {
+    let key: String
+    let code: String
+    let text: String?
+    let defaultModifiers: Set<ShortcutModifier>
+    let supportsRepeat: Bool
+
+    init(
+        key: String,
+        code: String,
+        text: String? = nil,
+        defaultModifiers: Set<ShortcutModifier> = [],
+        supportsRepeat: Bool = true
+    ) {
+        self.key = key
+        self.code = code
+        self.text = text
+        self.defaultModifiers = defaultModifiers
+        self.supportsRepeat = supportsRepeat
+    }
+}
+
+enum ShortcutToolbarItemKind: Hashable {
+    case modifier(ShortcutModifier)
+    case key(ShortcutInputDescriptor)
+}
+
+struct ShortcutToolbarItem: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let kind: ShortcutToolbarItemKind
+
+    static func modifier(_ modifier: ShortcutModifier, label: String? = nil) -> ShortcutToolbarItem {
+        ShortcutToolbarItem(
+            id: "modifier-\(modifier.rawValue)",
+            label: label ?? modifier.displayName,
+            kind: .modifier(modifier)
+        )
     }
 
-    static func keyboardBaseKey(from raw: String) -> ShortcutBaseKey? {
-        guard raw.count == 1,
-              raw.unicodeScalars.count == 1,
-              let scalar = raw.unicodeScalars.first,
-              scalar.isASCII else {
-            return nil
+    static func key(
+        id: String,
+        label: String,
+        key: String,
+        code: String,
+        text: String? = nil,
+        defaultModifiers: Set<ShortcutModifier> = [],
+        supportsRepeat: Bool = true
+    ) -> ShortcutToolbarItem {
+        ShortcutToolbarItem(
+            id: id,
+            label: label,
+            kind: .key(
+                ShortcutInputDescriptor(
+                    key: key,
+                    code: code,
+                    text: text,
+                    defaultModifiers: defaultModifiers,
+                    supportsRepeat: supportsRepeat
+                )
+            )
+        )
+    }
+}
+
+struct ShortcutToolbarLayout: Hashable {
+    let id: String
+    let items: [ShortcutToolbarItem]
+}
+
+enum ShortcutToolbarDeviceClass {
+    case phone
+    case pad
+
+    static var current: ShortcutToolbarDeviceClass {
+        UIDevice.current.userInterfaceIdiom == .pad ? .pad : .phone
+    }
+}
+
+enum ShortcutToolbarCatalog {
+    static func layout(
+        locale: Locale = .autoupdatingCurrent,
+        deviceClass: ShortcutToolbarDeviceClass,
+        isLandscape: Bool
+    ) -> ShortcutToolbarLayout {
+        let language = locale.language.languageCode?.identifier.lowercased() ?? locale.identifier.lowercased()
+        let localizedLetters = localeLetters(for: language)
+
+        var items: [ShortcutToolbarItem] = [
+            .modifier(.control),
+            .modifier(.alt),
+            .modifier(.shift),
+            .modifier(.meta),
+            .key(id: "esc", label: "Esc", key: "Escape", code: "Escape", supportsRepeat: false),
+            .key(id: "tab", label: "Tab", key: "Tab", code: "Tab", supportsRepeat: false),
+            .key(id: "up", label: "↑", key: "ArrowUp", code: "ArrowUp"),
+            .key(id: "down", label: "↓", key: "ArrowDown", code: "ArrowDown"),
+            .key(id: "left", label: "←", key: "ArrowLeft", code: "ArrowLeft"),
+            .key(id: "right", label: "→", key: "ArrowRight", code: "ArrowRight"),
+            .key(id: "home", label: "Home", key: "Home", code: "Home"),
+            .key(id: "end", label: "End", key: "End", code: "End"),
+            .key(id: "page-up", label: "PgUp", key: "PageUp", code: "PageUp"),
+            .key(id: "page-down", label: "PgDn", key: "PageDown", code: "PageDown"),
+            .key(id: "enter", label: "Enter", key: "Enter", code: "Enter", supportsRepeat: false),
+            .key(id: "backspace", label: "⌫", key: "Backspace", code: "Backspace"),
+            .key(id: "delete", label: "Del", key: "Delete", code: "Delete"),
+        ]
+
+        items.append(contentsOf: localizedLetters)
+
+        if deviceClass == .pad || isLandscape {
+            items.append(contentsOf: [
+                .key(id: "f1", label: "F1", key: "F1", code: "F1"),
+                .key(id: "f2", label: "F2", key: "F2", code: "F2"),
+                .key(id: "f5", label: "F5", key: "F5", code: "F5"),
+                .key(id: "f10", label: "F10", key: "F10", code: "F10"),
+                .key(id: "f12", label: "F12", key: "F12", code: "F12"),
+                .key(id: "slash", label: "/", key: "/", code: "Slash", text: "/"),
+                .key(id: "minus", label: "-", key: "-", code: "Minus", text: "-"),
+                .key(id: "left-bracket", label: "[", key: "[", code: "BracketLeft", text: "["),
+                .key(id: "right-bracket", label: "]", key: "]", code: "BracketRight", text: "]"),
+                .key(id: "semicolon", label: ";", key: ";", code: "Semicolon", text: ";"),
+            ])
         }
 
-        if scalar.value == 32 {
-            return ShortcutBaseKey(label: "Space", token: "Space")
-        }
-
-        let isASCIIControl = scalar.value < 32 || scalar.value == 127
-        guard !scalar.properties.isWhitespace, !isASCIIControl else {
-            return nil
-        }
-
-        if (65...90).contains(scalar.value) || (97...122).contains(scalar.value) {
-            let letter = String(Character(scalar)).lowercased()
-            return ShortcutBaseKey(label: letter.uppercased(), token: letter)
-        }
-
-        let symbol = String(Character(scalar))
-        return ShortcutBaseKey(label: symbol, token: symbol)
+        return ShortcutToolbarLayout(
+            id: "\(language)-\(deviceClass == .pad ? "pad" : "phone")-\(isLandscape ? "landscape" : "portrait")",
+            items: items
+        )
     }
 
-    static func isValidKeyToken(_ token: String) -> Bool {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= 64, trimmed == token else {
-            return false
-        }
-        return trimmed.unicodeScalars.allSatisfy { scalar in
-            let isASCIIControl = scalar.value < 32 || scalar.value == 127
-            return scalar.isASCII && !isASCIIControl && !scalar.properties.isWhitespace
+    private static func localeLetters(for language: String) -> [ShortcutToolbarItem] {
+        switch language {
+        case "fr":
+            return [
+                .key(id: "fr-a", label: "A", key: "a", code: "KeyA", text: "a"),
+                .key(id: "fr-z", label: "Z", key: "z", code: "KeyZ", text: "z"),
+                .key(id: "fr-e", label: "E", key: "e", code: "KeyE", text: "e"),
+                .key(id: "fr-r", label: "R", key: "r", code: "KeyR", text: "r"),
+                .key(id: "fr-t", label: "T", key: "t", code: "KeyT", text: "t"),
+                .key(id: "fr-y", label: "Y", key: "y", code: "KeyY", text: "y"),
+            ]
+        case "de":
+            return [
+                .key(id: "de-q", label: "Q", key: "q", code: "KeyQ", text: "q"),
+                .key(id: "de-w", label: "W", key: "w", code: "KeyW", text: "w"),
+                .key(id: "de-e", label: "E", key: "e", code: "KeyE", text: "e"),
+                .key(id: "de-r", label: "R", key: "r", code: "KeyR", text: "r"),
+                .key(id: "de-t", label: "T", key: "t", code: "KeyT", text: "t"),
+                .key(id: "de-z", label: "Z", key: "z", code: "KeyZ", text: "z"),
+            ]
+        case "es":
+            return [
+                .key(id: "es-q", label: "Q", key: "q", code: "KeyQ", text: "q"),
+                .key(id: "es-w", label: "W", key: "w", code: "KeyW", text: "w"),
+                .key(id: "es-e", label: "E", key: "e", code: "KeyE", text: "e"),
+                .key(id: "es-r", label: "R", key: "r", code: "KeyR", text: "r"),
+                .key(id: "es-t", label: "T", key: "t", code: "KeyT", text: "t"),
+                .key(id: "es-ntilde", label: "Ñ", key: ";", code: "Semicolon", text: ";"),
+            ]
+        case "ru":
+            return [
+                .key(id: "ru-yi", label: "Й", key: "q", code: "KeyQ", text: "q"),
+                .key(id: "ru-tse", label: "Ц", key: "w", code: "KeyW", text: "w"),
+                .key(id: "ru-u", label: "У", key: "e", code: "KeyE", text: "e"),
+                .key(id: "ru-ka", label: "К", key: "r", code: "KeyR", text: "r"),
+                .key(id: "ru-ie", label: "Е", key: "t", code: "KeyT", text: "t"),
+                .key(id: "ru-en", label: "Н", key: "y", code: "KeyY", text: "y"),
+            ]
+        default:
+            return [
+                .key(id: "default-q", label: "Q", key: "q", code: "KeyQ", text: "q"),
+                .key(id: "default-w", label: "W", key: "w", code: "KeyW", text: "w"),
+                .key(id: "default-e", label: "E", key: "e", code: "KeyE", text: "e"),
+                .key(id: "default-r", label: "R", key: "r", code: "KeyR", text: "r"),
+                .key(id: "default-t", label: "T", key: "t", code: "KeyT", text: "t"),
+                .key(id: "default-y", label: "Y", key: "y", code: "KeyY", text: "y"),
+            ]
         }
     }
 }
 
-struct ShortcutTapResolution: Hashable {
-    let tokenToSend: String?
-    let pendingModifiers: Set<ShortcutModifier>
+enum ShortcutInputEventFactory {
+    static func makeEvent(
+        for item: ShortcutToolbarItem,
+        activeModifiers: Set<ShortcutModifier>,
+        source: InputEventSource,
+        action: InputEventAction = .press
+    ) -> InputEvent? {
+        guard case .key(let descriptor) = item.kind else {
+            return nil
+        }
+
+        let allModifiers = activeModifiers.union(descriptor.defaultModifiers)
+        return InputEvent(
+            action: action,
+            key: descriptor.key,
+            code: descriptor.code,
+            modifiers: toInputEventModifiers(allModifiers),
+            text: descriptor.text,
+            source: source,
+            timestampMs: UInt64(Date().timeIntervalSince1970 * 1_000)
+        )
+    }
+
+    private static func toInputEventModifiers(_ modifiers: Set<ShortcutModifier>) -> InputEventModifiers {
+        InputEventModifiers(
+            ctrl: modifiers.contains(.control),
+            alt: modifiers.contains(.alt),
+            shift: modifiers.contains(.shift),
+            meta: modifiers.contains(.meta)
+        )
+    }
 }
 
-enum ShortcutTapResolver {
-    static func resolveTap(
-        item: ShortcutItem,
-        pendingModifiers: Set<ShortcutModifier>
-    ) -> ShortcutTapResolution {
-        if let modifierOnly = item.modifierOnly {
-            var updatedPending = pendingModifiers
-            if updatedPending.contains(modifierOnly) {
-                updatedPending.remove(modifierOnly)
-            } else {
-                updatedPending.insert(modifierOnly)
-            }
-            return ShortcutTapResolution(tokenToSend: nil, pendingModifiers: updatedPending)
-        }
+enum ShortcutLayoutMigration {
+    private static let legacyKeys = ["shortcutLayout.v1"]
+    private static let migrationMarkerKey = "shortcutLayout.v2.migrated"
 
-        guard item.kind == .key,
-              !item.baseToken.isEmpty else {
-            return ShortcutTapResolution(tokenToSend: nil, pendingModifiers: pendingModifiers)
-        }
-
-        let mergedModifiers = pendingModifiers.union(item.modifiers)
-        let token = TmuxShortcutTokenBuilder.token(baseToken: item.baseToken, modifiers: mergedModifiers)
-        guard TmuxShortcutTokenBuilder.isValidKeyToken(token) else {
-            return ShortcutTapResolution(tokenToSend: nil, pendingModifiers: pendingModifiers)
-        }
-        return ShortcutTapResolution(tokenToSend: token, pendingModifiers: [])
+    static func clearLegacyCustomLayout(userDefaults: UserDefaults = .standard) {
+        guard !userDefaults.bool(forKey: migrationMarkerKey) else { return }
+        legacyKeys.forEach { userDefaults.removeObject(forKey: $0) }
+        userDefaults.set(true, forKey: migrationMarkerKey)
     }
 }
 
 @MainActor
 @Observable
-class ShortcutLayoutManager {
-    static let shared = ShortcutLayoutManager()
+final class HardwareKeyboardMonitor {
+    private(set) var isConnected: Bool = false
+    var captureEnabled = false {
+        didSet { configureKeyCapture() }
+    }
+    var onInputEvent: ((InputEvent) -> Void)?
+    @ObservationIgnored private var pollingTask: Task<Void, Never>?
+    @ObservationIgnored private var activeModifiers: Set<ShortcutModifier> = []
+    @ObservationIgnored private var pressedCodes: Set<Int> = []
+    @ObservationIgnored private var capturedKeyboardID: ObjectIdentifier?
 
-    private(set) var layout: ShortcutLayout
-    private let userDefaults: UserDefaults
-    private let userDefaultsKey: String
-
-    init(
-        userDefaults: UserDefaults = .standard,
-        userDefaultsKey: String = "shortcutLayout.v1"
-    ) {
-        self.userDefaults = userDefaults
-        self.userDefaultsKey = userDefaultsKey
-        self.layout = Self.defaultLayout()
-        load()
+    private struct KeyDescriptor {
+        let key: String
+        let code: String
+        let text: String?
     }
 
-    private func load() {
-        guard let data = userDefaults.data(forKey: userDefaultsKey),
-              let decoded = try? JSONDecoder().decode(ShortcutLayout.self, from: data) else {
-            layout = Self.defaultLayout()
-            return
-        }
-        layout = Self.sanitize(decoded)
+    init() {
+        refreshConnectionState()
+        startPolling()
     }
 
-    private func save() {
-        guard let data = try? JSONEncoder().encode(layout) else { return }
-        userDefaults.set(data, forKey: userDefaultsKey)
+    deinit {
+        pollingTask?.cancel()
     }
 
-    var groups: [ShortcutGroup] {
-        layout.groups
-    }
-
-    var selectedGroupID: UUID? {
-        layout.selectedGroupID
-    }
-
-    var selectedGroup: ShortcutGroup? {
-        guard let id = layout.selectedGroupID else {
-            return layout.groups.first
-        }
-        return layout.groups.first { $0.id == id } ?? layout.groups.first
-    }
-
-    var selectedGroupItems: [ShortcutItem] {
-        selectedGroup?.items ?? []
-    }
-
-    func selectGroup(_ id: UUID) {
-        guard layout.groups.contains(where: { $0.id == id }) else { return }
-        layout.selectedGroupID = id
-        save()
-    }
-
-    func selectNextGroup() {
-        selectAdjacentGroup(step: 1)
-    }
-
-    func selectPreviousGroup() {
-        selectAdjacentGroup(step: -1)
-    }
-
-    private func selectAdjacentGroup(step: Int) {
-        let count = layout.groups.count
-        guard count > 1 else {
-            return
-        }
-
-        let selectedIndex: Int
-        if let selectedID = layout.selectedGroupID,
-           let index = layout.groups.firstIndex(where: { $0.id == selectedID }) {
-            selectedIndex = index
-        } else {
-            selectedIndex = 0
-        }
-
-        let normalizedStep = step >= 0 ? 1 : -1
-        let nextIndex = (selectedIndex + normalizedStep + count) % count
-        layout.selectedGroupID = layout.groups[nextIndex].id
-        save()
-    }
-
-    func addGroup(named rawName: String?) {
-        let trimmed = rawName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let candidate = trimmed.isEmpty ? "Group" : trimmed
-        let uniqueName = makeUniqueGroupName(candidate)
-        let newGroup = ShortcutGroup(name: uniqueName, items: [])
-        layout.groups.append(newGroup)
-        layout.selectedGroupID = newGroup.id
-        save()
-    }
-
-    func renameGroup(id: UUID, to rawName: String) {
-        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let index = layout.groups.firstIndex(where: { $0.id == id }) else {
-            return
-        }
-        layout.groups[index].name = trimmed
-        save()
-    }
-
-    func deleteGroups(at offsets: IndexSet) {
-        guard offsets.count < layout.groups.count else { return }
-        layout.groups.remove(atOffsets: offsets)
-        normalizeSelection()
-        save()
-    }
-
-    func deleteGroup(_ id: UUID) {
-        guard layout.groups.count > 1 else { return }
-        layout.groups.removeAll { $0.id == id }
-        normalizeSelection()
-        save()
-    }
-
-    func moveGroups(from source: IndexSet, to destination: Int) {
-        layout.groups.move(fromOffsets: source, toOffset: destination)
-        normalizeSelection()
-        save()
-    }
-
-    @discardableResult
-    func addShortcut(
-        baseLabel: String,
-        baseToken: String,
-        modifiers: Set<ShortcutModifier>,
-        to groupID: UUID,
-        at index: Int? = nil
-    ) -> Bool {
-        let cleanLabel = baseLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanLabel.isEmpty,
-              let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
-            return false
-        }
-
-        let item = ShortcutItem(baseLabel: cleanLabel, baseToken: baseToken, modifiers: modifiers)
-        guard item.isValidForStorage else {
-            return false
-        }
-
-        if let index {
-            let clamped = max(0, min(index, layout.groups[groupIndex].items.count))
-            layout.groups[groupIndex].items.insert(item, at: clamped)
-        } else {
-            layout.groups[groupIndex].items.append(item)
-        }
-        save()
-        return true
-    }
-
-    @discardableResult
-    func addModifierShortcut(
-        _ modifier: ShortcutModifier,
-        to groupID: UUID,
-        at index: Int? = nil
-    ) -> Bool {
-        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
-            return false
-        }
-
-        let item = ShortcutItem(modifierOnly: modifier)
-        guard item.isValidForStorage else {
-            return false
-        }
-
-        if let index {
-            let clamped = max(0, min(index, layout.groups[groupIndex].items.count))
-            layout.groups[groupIndex].items.insert(item, at: clamped)
-        } else {
-            layout.groups[groupIndex].items.append(item)
-        }
-        save()
-        return true
-    }
-
-    @discardableResult
-    func addCatalogKey(
-        _ key: ShortcutCatalogKey,
-        modifiers: Set<ShortcutModifier>,
-        to groupID: UUID,
-        at index: Int? = nil
-    ) -> Bool {
-        addShortcut(
-            baseLabel: key.label,
-            baseToken: key.tmuxToken,
-            modifiers: key.defaultModifiers.union(modifiers),
-            to: groupID,
-            at: index
-        )
-    }
-
-    func moveItem(in groupID: UUID, itemID: UUID, before targetID: UUID?) {
-        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
-            return
-        }
-        guard itemID != targetID else {
-            return
-        }
-
-        var items = layout.groups[groupIndex].items
-        guard let sourceIndex = items.firstIndex(where: { $0.id == itemID }) else {
-            return
-        }
-
-        let moved = items.remove(at: sourceIndex)
-
-        let destinationIndex: Int
-        if let targetID,
-           let targetIndex = items.firstIndex(where: { $0.id == targetID }) {
-            destinationIndex = targetIndex
-        } else {
-            destinationIndex = items.count
-        }
-
-        items.insert(moved, at: destinationIndex)
-        layout.groups[groupIndex].items = items
-        save()
-    }
-
-    func moveItem(in groupID: UUID, itemID: UUID, to destinationIndex: Int) {
-        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
-            return
-        }
-
-        var items = layout.groups[groupIndex].items
-        guard !items.isEmpty,
-              let sourceIndex = items.firstIndex(where: { $0.id == itemID }) else {
-            return
-        }
-
-        let clampedDestination = max(0, min(destinationIndex, items.count - 1))
-        guard sourceIndex != clampedDestination else {
-            return
-        }
-
-        let moved = items.remove(at: sourceIndex)
-        items.insert(moved, at: clampedDestination)
-        layout.groups[groupIndex].items = items
-        save()
-    }
-
-    func setItemOrder(in groupID: UUID, itemIDs: [UUID]) {
-        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
-            return
-        }
-
-        let existingItems = layout.groups[groupIndex].items
-        guard existingItems.count == itemIDs.count else {
-            return
-        }
-
-        let existingIDs = Set(existingItems.map(\.id))
-        let incomingIDs = Set(itemIDs)
-        guard existingIDs == incomingIDs else {
-            return
-        }
-
-        guard existingItems.map(\.id) != itemIDs else {
-            return
-        }
-
-        let itemByID = Dictionary(uniqueKeysWithValues: existingItems.map { ($0.id, $0) })
-        let reordered = itemIDs.compactMap { itemByID[$0] }
-        guard reordered.count == existingItems.count else {
-            return
-        }
-
-        layout.groups[groupIndex].items = reordered
-        save()
-    }
-
-    func moveItems(in groupID: UUID, from source: IndexSet, to destination: Int) {
-        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
-            return
-        }
-        layout.groups[groupIndex].items.move(fromOffsets: source, toOffset: destination)
-        save()
-    }
-
-    func deleteItems(in groupID: UUID, at offsets: IndexSet) {
-        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
-            return
-        }
-        layout.groups[groupIndex].items.remove(atOffsets: offsets)
-        save()
-    }
-
-    func removeItem(_ itemID: UUID, from groupID: UUID) {
-        guard let groupIndex = layout.groups.firstIndex(where: { $0.id == groupID }) else {
-            return
-        }
-        layout.groups[groupIndex].items.removeAll { $0.id == itemID }
-        save()
-    }
-
-    private static func sanitize(_ layout: ShortcutLayout) -> ShortcutLayout {
-        let sanitizedGroups = layout.groups.map { group in
-            var next = group
-            next.items = group.items.filter { item in
-                item.isValidForStorage
+    private func startPolling() {
+        pollingTask?.cancel()
+        pollingTask = Task { [weak self] in
+            while let self, !Task.isCancelled {
+                self.refreshConnectionState()
+                self.configureKeyCapture()
+                try? await Task.sleep(for: .seconds(1))
             }
-            return next
         }
-
-        if sanitizedGroups.isEmpty {
-            return defaultLayout()
-        }
-
-        let selectedID = layout.selectedGroupID
-        if let selectedID,
-           sanitizedGroups.contains(where: { $0.id == selectedID }) {
-            return ShortcutLayout(groups: sanitizedGroups, selectedGroupID: selectedID)
-        }
-
-        return ShortcutLayout(groups: sanitizedGroups, selectedGroupID: sanitizedGroups.first?.id)
     }
 
-    private static func defaultLayout() -> ShortcutLayout {
-        let nav = ShortcutGroup(
-            name: "Nav",
-            items: [
-                ShortcutItem.fromCatalog(id: "up")!,
-                ShortcutItem.fromCatalog(id: "down")!,
-                ShortcutItem.fromCatalog(id: "left")!,
-                ShortcutItem.fromCatalog(id: "right")!,
-                ShortcutItem.fromCatalog(id: "home")!,
-                ShortcutItem.fromCatalog(id: "end")!,
-                ShortcutItem.fromCatalog(id: "page_up")!,
-                ShortcutItem.fromCatalog(id: "page_down")!
-            ]
-        )
-
-        let control = ShortcutGroup(
-            name: "Control",
-            items: [
-                ShortcutItem.fromCatalog(id: "escape")!,
-                ShortcutItem.fromCatalog(id: "tab")!,
-                ShortcutItem.fromCatalog(id: "backspace")!,
-                ShortcutItem.fromCatalog(id: "enter")!,
-                ShortcutItem.fromCatalog(id: "letter_a", extraModifiers: [.control])!,
-                ShortcutItem.fromCatalog(id: "letter_c", extraModifiers: [.control])!,
-                ShortcutItem.fromCatalog(id: "letter_d", extraModifiers: [.control])!,
-                ShortcutItem.fromCatalog(id: "letter_z", extraModifiers: [.control])!
-            ]
-        )
-
-        return ShortcutLayout(groups: [nav, control], selectedGroupID: nav.id)
+    private func refreshConnectionState() {
+        isConnected = GCKeyboard.coalesced != nil
+        if !isConnected {
+            activeModifiers.removeAll()
+            pressedCodes.removeAll()
+        }
     }
 
-    private func normalizeSelection() {
-        if layout.groups.isEmpty {
-            let fallback = Self.defaultLayout()
-            layout = fallback
+    private func configureKeyCapture() {
+        guard captureEnabled,
+              let keyboard = GCKeyboard.coalesced,
+              let keyboardInput = keyboard.keyboardInput else {
+            detachKeyCapture()
             return
         }
 
-        if let selected = layout.selectedGroupID,
-           layout.groups.contains(where: { $0.id == selected }) {
+        let keyboardID = ObjectIdentifier(keyboard)
+        guard capturedKeyboardID != keyboardID else {
             return
         }
 
-        layout.selectedGroupID = layout.groups.first?.id
-    }
-
-    private func makeUniqueGroupName(_ base: String) -> String {
-        let existing = Set(layout.groups.map { $0.name.lowercased() })
-        if !existing.contains(base.lowercased()) {
-            return base
-        }
-
-        var counter = 2
-        while true {
-            let candidate = "\(base) \(counter)"
-            if !existing.contains(candidate.lowercased()) {
-                return candidate
+        keyboardInput.keyChangedHandler = { [weak self] _, _, keyCode, pressed in
+            guard let self else { return }
+            Task { @MainActor in
+                self.handleKeyChange(keyCode: keyCode, pressed: pressed)
             }
-            counter += 1
+        }
+        capturedKeyboardID = keyboardID
+    }
+
+    private func detachKeyCapture() {
+        if let keyboard = GCKeyboard.coalesced {
+            keyboard.keyboardInput?.keyChangedHandler = nil
+        }
+        capturedKeyboardID = nil
+        activeModifiers.removeAll()
+        pressedCodes.removeAll()
+    }
+
+    private func handleKeyChange(keyCode: GCKeyCode, pressed: Bool) {
+        if let modifier = modifier(for: keyCode) {
+            if pressed {
+                activeModifiers.insert(modifier)
+            } else {
+                activeModifiers.remove(modifier)
+            }
+            return
+        }
+
+        guard let descriptor = descriptor(for: keyCode) else {
+            return
+        }
+
+        let codeValue = Int(keyCode.rawValue)
+        if !pressed {
+            pressedCodes.remove(codeValue)
+            return
+        }
+
+        let action: InputEventAction = pressedCodes.contains(codeValue) ? .repeatAction : .press
+        pressedCodes.insert(codeValue)
+        let event = InputEvent(
+            action: action,
+            key: descriptor.key,
+            code: descriptor.code,
+            modifiers: InputEventModifiers(
+                ctrl: activeModifiers.contains(.control),
+                alt: activeModifiers.contains(.alt),
+                shift: activeModifiers.contains(.shift),
+                meta: activeModifiers.contains(.meta)
+            ),
+            text: descriptor.text,
+            source: .hardwareKeyboard,
+            timestampMs: UInt64(Date().timeIntervalSince1970 * 1_000)
+        )
+        onInputEvent?(event)
+    }
+
+    private func modifier(for keyCode: GCKeyCode) -> ShortcutModifier? {
+        switch keyCode {
+        case .leftControl, .rightControl:
+            return .control
+        case .leftAlt, .rightAlt:
+            return .alt
+        case .leftShift, .rightShift:
+            return .shift
+        case .leftGUI, .rightGUI:
+            return .meta
+        default:
+            return nil
+        }
+    }
+
+    private func descriptor(for keyCode: GCKeyCode) -> KeyDescriptor? {
+        switch keyCode {
+        case .keyA: return KeyDescriptor(key: "a", code: "KeyA", text: "a")
+        case .keyB: return KeyDescriptor(key: "b", code: "KeyB", text: "b")
+        case .keyC: return KeyDescriptor(key: "c", code: "KeyC", text: "c")
+        case .keyD: return KeyDescriptor(key: "d", code: "KeyD", text: "d")
+        case .keyE: return KeyDescriptor(key: "e", code: "KeyE", text: "e")
+        case .keyF: return KeyDescriptor(key: "f", code: "KeyF", text: "f")
+        case .keyG: return KeyDescriptor(key: "g", code: "KeyG", text: "g")
+        case .keyH: return KeyDescriptor(key: "h", code: "KeyH", text: "h")
+        case .keyI: return KeyDescriptor(key: "i", code: "KeyI", text: "i")
+        case .keyJ: return KeyDescriptor(key: "j", code: "KeyJ", text: "j")
+        case .keyK: return KeyDescriptor(key: "k", code: "KeyK", text: "k")
+        case .keyL: return KeyDescriptor(key: "l", code: "KeyL", text: "l")
+        case .keyM: return KeyDescriptor(key: "m", code: "KeyM", text: "m")
+        case .keyN: return KeyDescriptor(key: "n", code: "KeyN", text: "n")
+        case .keyO: return KeyDescriptor(key: "o", code: "KeyO", text: "o")
+        case .keyP: return KeyDescriptor(key: "p", code: "KeyP", text: "p")
+        case .keyQ: return KeyDescriptor(key: "q", code: "KeyQ", text: "q")
+        case .keyR: return KeyDescriptor(key: "r", code: "KeyR", text: "r")
+        case .keyS: return KeyDescriptor(key: "s", code: "KeyS", text: "s")
+        case .keyT: return KeyDescriptor(key: "t", code: "KeyT", text: "t")
+        case .keyU: return KeyDescriptor(key: "u", code: "KeyU", text: "u")
+        case .keyV: return KeyDescriptor(key: "v", code: "KeyV", text: "v")
+        case .keyW: return KeyDescriptor(key: "w", code: "KeyW", text: "w")
+        case .keyX: return KeyDescriptor(key: "x", code: "KeyX", text: "x")
+        case .keyY: return KeyDescriptor(key: "y", code: "KeyY", text: "y")
+        case .keyZ: return KeyDescriptor(key: "z", code: "KeyZ", text: "z")
+        case .one: return KeyDescriptor(key: "1", code: "Digit1", text: "1")
+        case .two: return KeyDescriptor(key: "2", code: "Digit2", text: "2")
+        case .three: return KeyDescriptor(key: "3", code: "Digit3", text: "3")
+        case .four: return KeyDescriptor(key: "4", code: "Digit4", text: "4")
+        case .five: return KeyDescriptor(key: "5", code: "Digit5", text: "5")
+        case .six: return KeyDescriptor(key: "6", code: "Digit6", text: "6")
+        case .seven: return KeyDescriptor(key: "7", code: "Digit7", text: "7")
+        case .eight: return KeyDescriptor(key: "8", code: "Digit8", text: "8")
+        case .nine: return KeyDescriptor(key: "9", code: "Digit9", text: "9")
+        case .zero: return KeyDescriptor(key: "0", code: "Digit0", text: "0")
+        case .hyphen: return KeyDescriptor(key: "-", code: "Minus", text: "-")
+        case .equalSign: return KeyDescriptor(key: "=", code: "Equal", text: "=")
+        case .openBracket: return KeyDescriptor(key: "[", code: "BracketLeft", text: "[")
+        case .closeBracket: return KeyDescriptor(key: "]", code: "BracketRight", text: "]")
+        case .backslash: return KeyDescriptor(key: "\\", code: "Backslash", text: "\\")
+        case .semicolon: return KeyDescriptor(key: ";", code: "Semicolon", text: ";")
+        case .quote: return KeyDescriptor(key: "'", code: "Quote", text: "'")
+        case .graveAccentAndTilde: return KeyDescriptor(key: "`", code: "Backquote", text: "`")
+        case .comma: return KeyDescriptor(key: ",", code: "Comma", text: ",")
+        case .period: return KeyDescriptor(key: ".", code: "Period", text: ".")
+        case .slash: return KeyDescriptor(key: "/", code: "Slash", text: "/")
+        case .returnOrEnter: return KeyDescriptor(key: "Enter", code: "Enter", text: nil)
+        case .escape: return KeyDescriptor(key: "Escape", code: "Escape", text: nil)
+        case .deleteOrBackspace: return KeyDescriptor(key: "Backspace", code: "Backspace", text: nil)
+        case .tab: return KeyDescriptor(key: "Tab", code: "Tab", text: nil)
+        case .spacebar: return KeyDescriptor(key: "Space", code: "Space", text: " ")
+        case .upArrow: return KeyDescriptor(key: "ArrowUp", code: "ArrowUp", text: nil)
+        case .downArrow: return KeyDescriptor(key: "ArrowDown", code: "ArrowDown", text: nil)
+        case .leftArrow: return KeyDescriptor(key: "ArrowLeft", code: "ArrowLeft", text: nil)
+        case .rightArrow: return KeyDescriptor(key: "ArrowRight", code: "ArrowRight", text: nil)
+        case .home: return KeyDescriptor(key: "Home", code: "Home", text: nil)
+        case .end: return KeyDescriptor(key: "End", code: "End", text: nil)
+        case .pageUp: return KeyDescriptor(key: "PageUp", code: "PageUp", text: nil)
+        case .pageDown: return KeyDescriptor(key: "PageDown", code: "PageDown", text: nil)
+        case .insert: return KeyDescriptor(key: "Insert", code: "Insert", text: nil)
+        case .deleteForward: return KeyDescriptor(key: "Delete", code: "Delete", text: nil)
+        default:
+            return nil
         }
     }
 }

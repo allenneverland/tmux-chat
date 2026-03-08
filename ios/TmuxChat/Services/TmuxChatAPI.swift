@@ -173,49 +173,16 @@ class TmuxChatAPI {
         _ = try await request(path: "/panes/\(encodedTarget)/escape", method: "POST")
     }
 
-    func sendKey(target: String, key: String) async throws {
-        if isDemoMode { return }
-        let body = SendKeyRequest(key: key)
+    func sendInputEvents(target: String, events: [InputEvent], maxBatchSize: Int) async throws {
+        if isDemoMode || events.isEmpty { return }
         let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
-        _ = try await request(
-            path: "/panes/\(encodedTarget)/key",
-            method: "POST",
-            body: body,
-            timeoutSeconds: 2
-        )
-    }
+        let batchSize = max(1, min(maxBatchSize, 128))
 
-    func sendShortcutKeys(target: String, keys: [String], preferBatch: Bool) async throws {
-        if isDemoMode || keys.isEmpty { return }
-        let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
-
-        if preferBatch, keys.count > 1 {
-            let batchBody = SendKeysRequest(keys: keys)
-            do {
-                _ = try await request(
-                    path: "/panes/\(encodedTarget)/keys",
-                    method: "POST",
-                    body: batchBody,
-                    timeoutSeconds: 2
-                )
-                return
-            } catch let error as APIError {
-                if case .httpError(let statusCode, let path, _, _) = error,
-                   statusCode == 404,
-                   path.contains("/panes/"),
-                   path.hasSuffix("/keys") {
-                    // Fallback for hosts that have not deployed schema v4 batch endpoint yet.
-                } else {
-                    throw error
-                }
-            }
-        }
-
-        // Preserve ordering when falling back to single-key route.
-        for key in keys {
-            let body = SendKeyRequest(key: key)
+        for index in stride(from: 0, to: events.count, by: batchSize) {
+            let end = min(index + batchSize, events.count)
+            let body = InputEventBatchRequest(events: Array(events[index..<end]))
             _ = try await request(
-                path: "/panes/\(encodedTarget)/key",
+                path: "/panes/\(encodedTarget)/input-events",
                 method: "POST",
                 body: body,
                 timeoutSeconds: 2
@@ -223,11 +190,26 @@ class TmuxChatAPI {
         }
     }
 
-    func probeShortcutKeyEndpoint(target: String, server: ServerConfig? = nil) async throws {
+    func probeInputEventsEndpoint(target: String, server: ServerConfig? = nil) async throws {
         if isDemoMode { return }
-        let body = SendKeyRequest(key: "Enter")
+        let body = InputEventBatchRequest(events: [
+            InputEvent(
+                action: .press,
+                key: "Enter",
+                code: "Enter",
+                modifiers: .none,
+                text: nil,
+                source: .softwareBar,
+                timestampMs: UInt64(Date().timeIntervalSince1970 * 1_000)
+            )
+        ])
         let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
-        _ = try await request(path: "/panes/\(encodedTarget)/key?probe=true", method: "POST", body: body, server: server)
+        _ = try await request(
+            path: "/panes/\(encodedTarget)/input-events?probe=true",
+            method: "POST",
+            body: body,
+            server: server
+        )
     }
 
     func getOutput(target: String, lines: Int = 200) async throws -> String {
@@ -607,17 +589,21 @@ extension TmuxChatAPI {
     static let demoCapabilities = DaemonCapabilitiesResponse(
         daemon: "tmux-chatd",
         version: "demo",
-        capabilitiesSchemaVersion: 4,
-        features: DaemonFeatureCapabilities(shortcutKeys: true, shortcutKeyBatch: true),
+        capabilitiesSchemaVersion: 5,
+        features: DaemonFeatureCapabilities(
+            inputEventsV1: DaemonInputEventsCapabilities(
+                enabled: true,
+                maxBatch: 128,
+                supportsRepeat: true
+            )
+        ),
         endpoints: DaemonEndpointCapabilities(
             healthz: true,
             capabilities: true,
             diagnostics: true,
             sessions: true,
             panes: true,
-            paneKey: true,
-            paneKeys: true,
-            paneKeyProbe: true,
+            paneInputEvents: true,
             notify: true
         )
     )

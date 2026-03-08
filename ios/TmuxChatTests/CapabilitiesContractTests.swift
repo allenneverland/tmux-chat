@@ -4,37 +4,43 @@ import Testing
 
 struct CapabilitiesContractTests {
     @Test
-    func decodesSchemaV3ShortcutFeatures() throws {
+    func decodesSchemaV5InputEventsFeatures() throws {
         let raw = """
         {
           "daemon": "tmux-chatd",
-          "version": "1.0.22",
-          "capabilities_schema_version": 3,
-          "features": { "shortcut_keys": true },
+          "version": "1.1.0",
+          "capabilities_schema_version": 5,
+          "features": {
+            "input_events_v1": {
+              "enabled": true,
+              "max_batch": 128,
+              "supports_repeat": true
+            }
+          },
           "endpoints": {
             "healthz": true,
             "capabilities": true,
             "diagnostics": true,
             "sessions": true,
             "panes": true,
-            "pane_key": true,
-            "pane_key_probe": true,
+            "pane_input_events": true,
             "notify": true
           }
         }
         """
 
         let caps = try JSONDecoder().decode(DaemonCapabilitiesResponse.self, from: Data(raw.utf8))
-        #expect(caps.capabilitiesSchemaVersion == 3)
-        #expect(caps.features?.shortcutKeys == true)
-        #expect(caps.endpoints.paneKey == true)
-        #expect(caps.endpoints.paneKeyProbe == true)
-        #expect(caps.supportsRequiredShortcutContract == true)
-        #expect(caps.shortcutKeysSupport == .supported)
+        #expect(caps.capabilitiesSchemaVersion == 5)
+        #expect(caps.features?.inputEventsV1?.enabled == true)
+        #expect(caps.features?.inputEventsV1?.maxBatch == 128)
+        #expect(caps.endpoints.paneInputEvents == true)
+        #expect(caps.supportsInputEventsContract == true)
+        #expect(caps.maxInputEventsBatch == 128)
+        #expect(caps.inputEventsSupport == .supported)
     }
 
     @Test
-    func decodesLegacyCapabilitiesWithoutShortcutFeature() throws {
+    func decodesLegacyCapabilitiesWithoutInputEventsFeature() throws {
         let raw = """
         {
           "daemon": "tmux-chatd",
@@ -53,48 +59,24 @@ struct CapabilitiesContractTests {
         let caps = try JSONDecoder().decode(DaemonCapabilitiesResponse.self, from: Data(raw.utf8))
         #expect(caps.capabilitiesSchemaVersion == nil)
         #expect(caps.features == nil)
-        #expect(caps.endpoints.paneKey == nil)
-        #expect(caps.endpoints.paneKeyProbe == nil)
-        #expect(caps.supportsRequiredShortcutContract == false)
-        #expect(caps.shortcutKeysSupport == .unknown)
+        #expect(caps.endpoints.paneInputEvents == nil)
+        #expect(caps.supportsInputEventsContract == false)
+        #expect(caps.inputEventsSupport == .unknown)
     }
 
     @Test
-    func reportsUnsupportedShortcutWhenFeatureFalse() throws {
+    func reportsUnsupportedInputEventsWhenFeatureDisabled() throws {
         let raw = """
         {
           "daemon": "tmux-chatd",
-          "version": "1.0.22",
-          "capabilities_schema_version": 3,
-          "features": { "shortcut_keys": false },
-          "endpoints": {
-            "healthz": true,
-            "capabilities": true,
-            "diagnostics": true,
-            "sessions": true,
-            "panes": true,
-            "pane_key": false,
-            "pane_key_probe": false,
-            "notify": true
-          }
-        }
-        """
-
-        let caps = try JSONDecoder().decode(DaemonCapabilitiesResponse.self, from: Data(raw.utf8))
-        #expect(caps.supportsRequiredShortcutContract == false)
-        #expect(caps.shortcutKeysSupport == .unsupported)
-    }
-
-    @Test
-    func decodesSchemaV4BatchShortcutFeatures() throws {
-        let raw = """
-        {
-          "daemon": "tmux-chatd",
-          "version": "1.0.30",
-          "capabilities_schema_version": 4,
+          "version": "1.1.0",
+          "capabilities_schema_version": 5,
           "features": {
-            "shortcut_keys": true,
-            "shortcut_key_batch": true
+            "input_events_v1": {
+              "enabled": false,
+              "max_batch": 64,
+              "supports_repeat": false
+            }
           },
           "endpoints": {
             "healthz": true,
@@ -102,19 +84,16 @@ struct CapabilitiesContractTests {
             "diagnostics": true,
             "sessions": true,
             "panes": true,
-            "pane_key": true,
-            "pane_keys": true,
-            "pane_key_probe": true,
+            "pane_input_events": false,
             "notify": true
           }
         }
         """
 
         let caps = try JSONDecoder().decode(DaemonCapabilitiesResponse.self, from: Data(raw.utf8))
-        #expect(caps.capabilitiesSchemaVersion == 4)
-        #expect(caps.features?.shortcutKeyBatch == true)
-        #expect(caps.endpoints.paneKeys == true)
-        #expect(caps.supportsRequiredShortcutContract == true)
-        #expect(caps.supportsShortcutBatchContract == true)
+        #expect(caps.supportsInputEventsContract == false)
+        #expect(caps.inputEventsSupport == .unsupported)
+        #expect(caps.maxInputEventsBatch == 64)
+        #expect(caps.supportsInputEventsRepeat == false)
     }
 }

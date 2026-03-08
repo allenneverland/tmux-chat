@@ -130,7 +130,9 @@ struct PaneDetailView: View {
     @FocusState private var isInputFocused: Bool
     @State private var showCommandEditor = false
     @State private var showCommandPicker = false
-    @State private var pendingShortcutModifiers: Set<ShortcutModifier> = []
+    @State private var modifierState = ShortcutModifierStateMachine()
+    @State private var hardwareKeyboardMonitor = HardwareKeyboardMonitor()
+    @State private var showToolbarWithHardwareKeyboard = false
 
     init(pane: Pane, windowName: String) {
         self.pane = pane
@@ -156,16 +158,35 @@ struct PaneDetailView: View {
         }
     }
 
-    private func sendShortcut(_ item: ShortcutItem) {
-        let resolution = ShortcutTapResolver.resolveTap(
-            item: item,
-            pendingModifiers: pendingShortcutModifiers
+    private var shortcutToolbarLayout: ShortcutToolbarLayout {
+        let screenSize = UIScreen.main.bounds.size
+        let isLandscape = screenSize.width > screenSize.height
+        return ShortcutToolbarCatalog.layout(
+            locale: .autoupdatingCurrent,
+            deviceClass: ShortcutToolbarDeviceClass.current,
+            isLandscape: isLandscape
         )
-        pendingShortcutModifiers = resolution.pendingModifiers
-        guard let token = resolution.tokenToSend else {
-            return
+    }
+
+    private var isHardwareKeyboardHiddenByDefault: Bool {
+        hardwareKeyboardMonitor.isConnected && !showToolbarWithHardwareKeyboard
+    }
+
+    private func handleShortcutTap(_ item: ShortcutToolbarItem) {
+        switch item.kind {
+        case .modifier(let modifier):
+            modifierState.cycle(modifier)
+        case .key:
+            let activeModifiers = modifierState.consumeModifiers(base: [])
+            guard let event = ShortcutInputEventFactory.makeEvent(
+                for: item,
+                activeModifiers: activeModifiers,
+                source: .softwareBar
+            ) else {
+                return
+            }
+            viewModel.enqueueInputEvent(event)
         }
-        viewModel.enqueueShortcut(token)
     }
 
     var body: some View {
@@ -188,13 +209,45 @@ struct PaneDetailView: View {
 
             Divider()
 
-            if viewModel.canUseShortcutToolbar {
-                ShortcutToolbarView(
-                    pendingModifiers: pendingShortcutModifiers,
-                    onKeyTapped: { item in
-                        sendShortcut(item)
+            if viewModel.canUseShortcutToolbar && !isHardwareKeyboardHiddenByDefault {
+                VStack(spacing: 6) {
+                    if hardwareKeyboardMonitor.isConnected {
+                        HStack {
+                            Text("Hardware keyboard connected")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Hide") {
+                                showToolbarWithHardwareKeyboard = false
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(.horizontal, 12)
                     }
-                )
+
+                    ShortcutToolbarView(
+                        layout: shortcutToolbarLayout,
+                        modifierState: modifierState,
+                        onItemTapped: handleShortcutTap
+                    )
+                }
+            } else if viewModel.canUseShortcutToolbar && isHardwareKeyboardHiddenByDefault {
+                HStack(spacing: 8) {
+                    Image(systemName: "keyboard")
+                        .foregroundStyle(.secondary)
+                    Text("Hardware keyboard connected. Shortcut bar is hidden by default.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer()
+                    Button(showToolbarWithHardwareKeyboard ? "Hide" : "Show") {
+                        showToolbarWithHardwareKeyboard.toggle()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground))
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: "keyboard")
@@ -299,10 +352,22 @@ struct PaneDetailView: View {
             .modifier(iPadPagePresentationModifier())
         }
         .task {
+            hardwareKeyboardMonitor.onInputEvent = { event in
+                guard !isInputFocused else { return }
+                viewModel.enqueueInputEvent(event)
+            }
+            hardwareKeyboardMonitor.captureEnabled = true
             await viewModel.startPolling()
         }
         .onDisappear {
+            hardwareKeyboardMonitor.captureEnabled = false
+            hardwareKeyboardMonitor.onInputEvent = nil
             viewModel.stopPolling()
+        }
+        .onChange(of: hardwareKeyboardMonitor.isConnected) { _, isConnected in
+            if !isConnected {
+                showToolbarWithHardwareKeyboard = false
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .unreadPanesChanged)) { _ in
             if let deviceId = ServerConfigManager.shared.activeServer?.deviceId {
@@ -335,7 +400,7 @@ struct DetectedOption {
     let label: String
 }
 
-enum ShortcutEndpointState: Equatable {
+enum InputEventEndpointState: Equatable {
     case checking
     case available
     case unsupportedContract
@@ -363,17 +428,17 @@ enum ShortcutEndpointState: Equatable {
         case .available:
             return ""
         case .checking:
-            return "Checking shortcut-key support..."
+            return "Checking input-events support..."
         case .unsupportedContract:
-            return "This host does not satisfy the required shortcut contract (schema v3 + pane_key_probe). Upgrade tmux-chatd and reconnect."
+            return "This host does not satisfy the required input-events contract (schema v5 + pane_input_events). Upgrade tmux-chatd and reconnect."
         case .routeMismatch:
-            return "Shortcut route mismatch detected. Verify reverse-proxy routing and active tmux-chatd binary."
+            return "Input-events route mismatch detected. Verify reverse-proxy routing and active tmux-chatd binary."
         case .unauthorized:
             return "Server authentication expired. Reconnect and re-pair this server."
         case .unreachable:
-            return "Cannot verify shortcut route. Check network connectivity and server reachability."
+            return "Cannot verify input-events route. Check network connectivity and server reachability."
         case .serverError(let message):
-            return "Shortcut support check failed: \(message)"
+            return "Input-events support check failed: \(message)"
         }
     }
 }
@@ -398,14 +463,14 @@ class PaneDetailViewModel {
     var errorMessage = ""
     var autoRefresh = true
     var quickAction: QuickAction = .none
-    var shortcutEndpointState: ShortcutEndpointState = .checking
+    var inputEndpointState: InputEventEndpointState = .checking
 
     var canUseShortcutToolbar: Bool {
-        shortcutEndpointState.canUseToolbar
+        inputEndpointState.canUseToolbar
     }
 
     var shortcutStatusMessage: String {
-        shortcutEndpointState.statusMessage
+        inputEndpointState.statusMessage
     }
 
     private let target: String
@@ -415,9 +480,9 @@ class PaneDetailViewModel {
     @ObservationIgnored private var scheduledRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var rawOutput: String = ""
     @ObservationIgnored private var didReportShortcutUnavailable = false
-    @ObservationIgnored private var supportsShortcutBatch = false
-    @ObservationIgnored private var pendingShortcutKeys: [String] = []
-    @ObservationIgnored private var shortcutDispatchTask: Task<Void, Never>?
+    @ObservationIgnored private var inputEventsMaxBatch = 32
+    @ObservationIgnored private var pendingInputEvents: [InputEvent] = []
+    @ObservationIgnored private var inputDispatchTask: Task<Void, Never>?
 
     init(target: String) {
         self.target = target
@@ -618,16 +683,16 @@ class PaneDetailViewModel {
         return result
     }
 
-    private func applyShortcutState(_ state: ShortcutEndpointState) {
-        shortcutEndpointState = state
+    private func applyInputState(_ state: InputEventEndpointState) {
+        inputEndpointState = state
         if state == .available {
             didReportShortcutUnavailable = false
         } else {
-            supportsShortcutBatch = false
+            inputEventsMaxBatch = 32
         }
     }
 
-    private func mapShortcutCapabilityError(_ error: APIError) -> ShortcutEndpointState {
+    private func mapInputCapabilityError(_ error: APIError) -> InputEventEndpointState {
         switch error {
         case .unauthorized:
             return .unauthorized
@@ -645,7 +710,7 @@ class PaneDetailViewModel {
         }
     }
 
-    private func mapShortcutProbeError(_ error: APIError) -> ShortcutEndpointState {
+    private func mapInputProbeError(_ error: APIError) -> InputEventEndpointState {
         switch error {
         case .unauthorized:
             return .unauthorized
@@ -654,10 +719,14 @@ class PaneDetailViewModel {
         case .httpError(let statusCode, let path, let code, _):
             if statusCode == 404 &&
                 path.contains("/panes/") &&
-                path.contains("/key") {
+                path.contains("/input-events") {
                 return .routeMismatch
             }
-            if statusCode == 400, code == "missing_key_payload" || code == "invalid_key_token" {
+            if statusCode == 410 {
+                return .unsupportedContract
+            }
+            if statusCode == 400,
+               code == "missing_input_events_payload" || code == "invalid_input_event" {
                 return .unsupportedContract
             }
             return .serverError(error.localizedDescription)
@@ -666,31 +735,31 @@ class PaneDetailViewModel {
         }
     }
 
-    private func verifyShortcutCapability(forceRefresh: Bool = false) async {
-        applyShortcutState(.checking)
+    private func verifyInputEventsCapability(forceRefresh: Bool = false) async {
+        applyInputState(.checking)
 
         do {
             let capabilities = try await api.getCapabilities(forceRefresh: forceRefresh)
-            guard capabilities.supportsRequiredShortcutContract else {
-                applyShortcutState(.unsupportedContract)
+            guard capabilities.supportsInputEventsContract else {
+                applyInputState(.unsupportedContract)
                 return
             }
-            supportsShortcutBatch = capabilities.supportsShortcutBatchContract
+            inputEventsMaxBatch = capabilities.maxInputEventsBatch
         } catch let error as APIError {
-            applyShortcutState(mapShortcutCapabilityError(error))
+            applyInputState(mapInputCapabilityError(error))
             return
         } catch {
-            applyShortcutState(.serverError(error.localizedDescription))
+            applyInputState(.serverError(error.localizedDescription))
             return
         }
 
         do {
-            try await api.probeShortcutKeyEndpoint(target: target)
-            applyShortcutState(.available)
+            try await api.probeInputEventsEndpoint(target: target)
+            applyInputState(.available)
         } catch let error as APIError {
-            applyShortcutState(mapShortcutProbeError(error))
+            applyInputState(mapInputProbeError(error))
         } catch {
-            applyShortcutState(.serverError(error.localizedDescription))
+            applyInputState(.serverError(error.localizedDescription))
         }
     }
 
@@ -705,25 +774,29 @@ class PaneDetailViewModel {
         }
     }
 
-    private func nextShortcutBatch(maxBatchSize: Int = 16) -> [String] {
-        let count = min(maxBatchSize, pendingShortcutKeys.count)
+    private func nextInputEventBatch() -> [InputEvent] {
+        let count = min(inputEventsMaxBatch, pendingInputEvents.count)
         guard count > 0 else { return [] }
-        let batch = Array(pendingShortcutKeys.prefix(count))
-        pendingShortcutKeys.removeFirst(count)
+        let batch = Array(pendingInputEvents.prefix(count))
+        pendingInputEvents.removeFirst(count)
         return batch
     }
 
-    private func handleShortcutSendError(_ error: APIError) {
+    private func handleInputEventSendError(_ error: APIError) {
         switch error {
         case .unauthorized:
-            applyShortcutState(.unauthorized)
+            applyInputState(.unauthorized)
             errorMessage = shortcutStatusMessage
             showError = true
         case .httpError(let statusCode, let path, _, _):
             if statusCode == 404 &&
                 path.contains("/panes/") &&
-                (path.hasSuffix("/key") || path.hasSuffix("/keys")) {
-                applyShortcutState(.routeMismatch)
+                path.hasSuffix("/input-events") {
+                applyInputState(.routeMismatch)
+                errorMessage = shortcutStatusMessage
+                showError = true
+            } else if statusCode == 410 {
+                applyInputState(.unsupportedContract)
                 errorMessage = shortcutStatusMessage
                 showError = true
             } else {
@@ -734,7 +807,7 @@ class PaneDetailViewModel {
             errorMessage = error.localizedDescription
             showError = true
         case .networkError:
-            applyShortcutState(.unreachable)
+            applyInputState(.unreachable)
             errorMessage = shortcutStatusMessage
             showError = true
         case .decodingError, .invalidURL:
@@ -743,28 +816,28 @@ class PaneDetailViewModel {
         }
     }
 
-    private func startShortcutDispatchLoopIfNeeded() {
-        if shortcutDispatchTask != nil {
+    private func startInputDispatchLoopIfNeeded() {
+        if inputDispatchTask != nil {
             return
         }
-        shortcutDispatchTask = Task {
-            defer { shortcutDispatchTask = nil }
-            while !pendingShortcutKeys.isEmpty {
-                let batch = nextShortcutBatch()
+        inputDispatchTask = Task {
+            defer { inputDispatchTask = nil }
+            while !pendingInputEvents.isEmpty {
+                let batch = nextInputEventBatch()
                 guard !batch.isEmpty else { continue }
                 do {
-                    try await api.sendShortcutKeys(
+                    try await api.sendInputEvents(
                         target: target,
-                        keys: batch,
-                        preferBatch: supportsShortcutBatch
+                        events: batch,
+                        maxBatchSize: inputEventsMaxBatch
                     )
                     scheduleSilentRefresh(after: .milliseconds(90))
                 } catch let error as APIError {
-                    pendingShortcutKeys.removeAll()
-                    handleShortcutSendError(error)
+                    pendingInputEvents.removeAll()
+                    handleInputEventSendError(error)
                     return
                 } catch {
-                    pendingShortcutKeys.removeAll()
+                    pendingInputEvents.removeAll()
                     errorMessage = error.localizedDescription
                     showError = true
                     return
@@ -773,8 +846,8 @@ class PaneDetailViewModel {
         }
     }
 
-    func enqueueShortcut(_ key: String) {
-        if !shortcutEndpointState.canUseToolbar {
+    func enqueueInputEvent(_ event: InputEvent) {
+        if !inputEndpointState.canUseToolbar {
             if !didReportShortcutUnavailable {
                 didReportShortcutUnavailable = true
                 errorMessage = shortcutStatusMessage
@@ -782,13 +855,13 @@ class PaneDetailViewModel {
             }
             return
         }
-        if pendingShortcutKeys.count >= 256 {
-            errorMessage = "Shortcut queue is busy. Wait for previous keys to flush."
+        if pendingInputEvents.count >= 256 {
+            errorMessage = "Input queue is busy. Wait for previous events to flush."
             showError = true
             return
         }
-        pendingShortcutKeys.append(key)
-        startShortcutDispatchLoopIfNeeded()
+        pendingInputEvents.append(event)
+        startInputDispatchLoopIfNeeded()
     }
 
     func stopPolling() {
@@ -796,14 +869,14 @@ class PaneDetailViewModel {
         pollingTask = nil
         scheduledRefreshTask?.cancel()
         scheduledRefreshTask = nil
-        shortcutDispatchTask?.cancel()
-        shortcutDispatchTask = nil
-        pendingShortcutKeys.removeAll()
+        inputDispatchTask?.cancel()
+        inputDispatchTask = nil
+        pendingInputEvents.removeAll()
     }
 
     func startPolling() async {
         stopPolling()
-        await verifyShortcutCapability(forceRefresh: true)
+        await verifyInputEventsCapability(forceRefresh: true)
         await refresh()
 
         pollingTask = Task {

@@ -370,8 +370,8 @@ final class SSHOnboardingCoordinator {
 
         if command -v jq >/dev/null 2>&1; then
           if ! echo "$CAPS_JSON" \
-            | jq -e '.capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null; then
-            SUMMARY="$(echo "$CAPS_JSON" | jq -r '"schema=\\(.capabilities_schema_version // "nil"),shortcut_keys=\\(.features.shortcut_keys // "nil"),pane_key=\\(.endpoints.pane_key // "nil"),pane_key_probe=\\(.endpoints.pane_key_probe // "nil")"' 2>/dev/null || true)"
+            | jq -e '.capabilities_schema_version >= 5 and .features.input_events_v1.enabled == true and .endpoints.pane_input_events == true' >/dev/null; then
+            SUMMARY="$(echo "$CAPS_JSON" | jq -r '"schema=\\(.capabilities_schema_version // "nil"),input_events_enabled=\\(.features.input_events_v1.enabled // "nil"),pane_input_events=\\(.endpoints.pane_input_events // "nil"),max_batch=\\(.features.input_events_v1.max_batch // "nil"),supports_repeat=\\(.features.input_events_v1.supports_repeat // "nil")"' 2>/dev/null || true)"
             if [ -z "$SUMMARY" ]; then
               SUMMARY="$(printf "%s" "$CAPS_JSON" | tr '\n' ' ' | tr -s ' ')"
             fi
@@ -379,10 +379,10 @@ final class SSHOnboardingCoordinator {
             exit 1
           fi
         else
-          echo "$CAPS_JSON" | grep -Eq '"capabilities_schema_version"[[:space:]]*:[[:space:]]*[3-9][0-9]*' || { echo "loopback_capabilities_schema_too_old" >&2; exit 1; }
-          echo "$CAPS_JSON" | grep -Eq '"shortcut_keys"[[:space:]]*:[[:space:]]*true' || { echo "loopback_capabilities_shortcut_keys_missing" >&2; exit 1; }
-          echo "$CAPS_JSON" | grep -Eq '"pane_key"[[:space:]]*:[[:space:]]*true' || { echo "loopback_capabilities_pane_key_missing" >&2; exit 1; }
-          echo "$CAPS_JSON" | grep -Eq '"pane_key_probe"[[:space:]]*:[[:space:]]*true' || { echo "loopback_capabilities_pane_key_probe_missing" >&2; exit 1; }
+          echo "$CAPS_JSON" | grep -Eq '"capabilities_schema_version"[[:space:]]*:[[:space:]]*[5-9][0-9]*' || { echo "loopback_capabilities_schema_too_old" >&2; exit 1; }
+          echo "$CAPS_JSON" | grep -Eq '"input_events_v1"[[:space:]]*:[[:space:]]*\\{' || { echo "loopback_capabilities_input_events_missing" >&2; exit 1; }
+          echo "$CAPS_JSON" | grep -Eq '"enabled"[[:space:]]*:[[:space:]]*true' || { echo "loopback_capabilities_input_events_disabled" >&2; exit 1; }
+          echo "$CAPS_JSON" | grep -Eq '"pane_input_events"[[:space:]]*:[[:space:]]*true' || { echo "loopback_capabilities_pane_input_events_missing" >&2; exit 1; }
         fi
 
         curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE_URL/diagnostics" >/dev/null
@@ -391,8 +391,8 @@ final class SSHOnboardingCoordinator {
           -X POST \
           -H "Authorization: Bearer $TOKEN" \
           -H "Content-Type: application/json" \
-          "$BASE_URL/panes/shortcut-probe/key?probe=true" \
-          -d '{"key":"Enter"}')"
+          "$BASE_URL/panes/input-probe/input-events?probe=true" \
+          -d '{"events":[{"action":"press","key":"Enter","code":"Enter","modifiers":{"ctrl":false,"alt":false,"shift":false,"meta":false},"text":null,"source":"software_bar","timestamp_ms":1}]}')"
         [ "$STATUS" = "204" ] || { echo "loopback_probe_http_${STATUS}" >&2; exit 1; }
         """
 
@@ -412,9 +412,9 @@ final class SSHOnboardingCoordinator {
     ) async throws -> (sessions: [Session], diagnostics: DaemonDiagnosticsResponse) {
         do {
             let capabilities = try await api.getCapabilities(server: server, forceRefresh: true)
-            guard capabilities.supportsRequiredShortcutContract else {
+            guard capabilities.supportsInputEventsContract else {
                 throw APIError.serverError(
-                    requiredShortcutContractFailureMessage(
+                    requiredInputEventsContractFailureMessage(
                         scope: "Control URL \(server.serverURL)",
                         capabilities: capabilities
                     )
@@ -426,8 +426,8 @@ final class SSHOnboardingCoordinator {
                 .flatMap(\.windows)
                 .flatMap(\.panes)
                 .first?
-                .target ?? "shortcut-probe"
-            try await api.probeShortcutKeyEndpoint(target: probeTarget, server: server)
+                .target ?? "input-probe"
+            try await api.probeInputEventsEndpoint(target: probeTarget, server: server)
             let diagnostics = try await api.getDiagnostics(server: server)
 
             return (sessions, diagnostics)
@@ -436,16 +436,18 @@ final class SSHOnboardingCoordinator {
         }
     }
 
-    private func requiredShortcutContractFailureMessage(
+    private func requiredInputEventsContractFailureMessage(
         scope: String,
         capabilities: DaemonCapabilitiesResponse
     ) -> String {
         let schema = capabilities.capabilitiesSchemaVersion.map(String.init) ?? "nil"
-        let shortcutKeys = capabilities.features?.shortcutKeys.map { $0 ? "true" : "false" } ?? "nil"
-        let paneKey = capabilities.endpoints.paneKey.map { $0 ? "true" : "false" } ?? "nil"
-        let paneKeyProbe = capabilities.endpoints.paneKeyProbe.map { $0 ? "true" : "false" } ?? "nil"
+        let inputEvents = capabilities.features?.inputEventsV1?.enabled == true ? "true" : "false"
+        let paneInputEvents = capabilities.endpoints.paneInputEvents == true ? "true" : "false"
+        let maxBatchValue = capabilities.features?.inputEventsV1?.maxBatch
+        let maxBatch = maxBatchValue.map(String.init) ?? "nil"
+        let supportsRepeat = capabilities.features?.inputEventsV1?.supportsRepeat == true ? "true" : "false"
         return
-            "\(scope) does not satisfy required control-plane contract (required: schema>=3, shortcut_keys=true, pane_key=true, pane_key_probe=true; got: schema=\(schema), shortcut_keys=\(shortcutKeys), pane_key=\(paneKey), pane_key_probe=\(paneKeyProbe)). Upgrade host tmux-chatd and verify reverse-proxy/tunnel routing."
+            "\(scope) does not satisfy required control-plane contract (required: schema>=5, input_events_v1.enabled=true, pane_input_events=true; got: schema=\(schema), input_events=\(inputEvents), pane_input_events=\(paneInputEvents), max_batch=\(maxBatch), supports_repeat=\(supportsRepeat)). Upgrade host tmux-chatd and verify reverse-proxy/tunnel routing."
     }
 
     private func mapLoopbackControlPlaneError(_ error: Error) -> APIError {
@@ -466,12 +468,12 @@ final class SSHOnboardingCoordinator {
         }
         if details.contains("loopback_capabilities_contract_mismatch") {
             return APIError.serverError(
-                "Host loopback tmux-chatd does not satisfy required control-plane contract (schema>=3 + pane_key_probe). Details: \(details)"
+                "Host loopback tmux-chatd does not satisfy required control-plane contract (schema>=5 + pane_input_events). Details: \(details)"
             )
         }
         if details.contains("loopback_probe_http_") {
             return APIError.serverError(
-                "Host loopback shortcut probe route is not healthy (`POST /panes/{target}/key?probe=true` must return 204). Details: \(details)"
+                "Host loopback input-events probe route is not healthy (`POST /panes/{target}/input-events?probe=true` must return 204). Details: \(details)"
             )
         }
         if details.isEmpty {
@@ -505,14 +507,14 @@ final class SSHOnboardingCoordinator {
                     "Control URL \(serverURL) is missing required endpoints (\(path)). Upgrade tmux-chatd or fix reverse-proxy/tunnel route mapping."
                 )
             }
-            if statusCode == 404, path.contains("/panes/"), path.contains("/key") {
+            if statusCode == 404, path.contains("/panes/"), path.contains("/input-events") {
                 return APIError.serverError(
-                    "Control URL \(serverURL) has shortcut route mismatch: `POST /panes/*/key?probe=true` returned 404. Fix reverse-proxy/tunnel method+path routing."
+                    "Control URL \(serverURL) has input-events route mismatch: `POST /panes/*/input-events?probe=true` returned 404. Fix reverse-proxy/tunnel method+path routing."
                 )
             }
-            if statusCode == 400, code == "missing_key_payload" || code == "invalid_key_token" {
+            if statusCode == 400, code == "missing_input_events_payload" || code == "invalid_input_event" {
                 return APIError.serverError(
-                    "Control URL \(serverURL) is running an incompatible key endpoint contract. Upgrade host tmux-chatd and retry."
+                    "Control URL \(serverURL) is running an incompatible input-events endpoint contract. Upgrade host tmux-chatd and retry."
                 )
             }
             return APIError.serverError(

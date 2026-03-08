@@ -391,15 +391,15 @@ final class HostAgentInstaller {
 
           if command -v jq >/dev/null 2>&1; then
             echo "$CAPS_JSON" \
-              | jq -e '.daemon == "tmux-chatd" and .capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null 2>&1
+              | jq -e '.daemon == "tmux-chatd" and .capabilities_schema_version >= 5 and .features.input_events_v1.enabled == true and .endpoints.pane_input_events == true' >/dev/null 2>&1
             return $?
           fi
 
           echo "$CAPS_JSON" | grep -Eq '"daemon"[[:space:]]*:[[:space:]]*"tmux-chatd"' || return 1
-          echo "$CAPS_JSON" | grep -Eq '"capabilities_schema_version"[[:space:]]*:[[:space:]]*[3-9][0-9]*' || return 1
-          echo "$CAPS_JSON" | grep -Eq '"shortcut_keys"[[:space:]]*:[[:space:]]*true' || return 1
-          echo "$CAPS_JSON" | grep -Eq '"pane_key"[[:space:]]*:[[:space:]]*true' || return 1
-          echo "$CAPS_JSON" | grep -Eq '"pane_key_probe"[[:space:]]*:[[:space:]]*true' || return 1
+          echo "$CAPS_JSON" | grep -Eq '"capabilities_schema_version"[[:space:]]*:[[:space:]]*[5-9][0-9]*' || return 1
+          echo "$CAPS_JSON" | grep -Eq '"input_events_v1"[[:space:]]*:[[:space:]]*\\{' || return 1
+          echo "$CAPS_JSON" | grep -Eq '"enabled"[[:space:]]*:[[:space:]]*true' || return 1
+          echo "$CAPS_JSON" | grep -Eq '"pane_input_events"[[:space:]]*:[[:space:]]*true' || return 1
           return 0
         }
 
@@ -411,7 +411,7 @@ final class HostAgentInstaller {
           fi
 
           if command -v jq >/dev/null 2>&1; then
-            SUMMARY="$(echo "$CAPS_JSON" | jq -r '"daemon=\\(.daemon // "nil"),capabilities_schema_version=\\(.capabilities_schema_version // "nil"),shortcut_keys=\\(.features.shortcut_keys // "nil"),pane_key=\\(.endpoints.pane_key // "nil"),pane_key_probe=\\(.endpoints.pane_key_probe // "nil")"' 2>/dev/null || true)"
+            SUMMARY="$(echo "$CAPS_JSON" | jq -r '"daemon=\\(.daemon // "nil"),capabilities_schema_version=\\(.capabilities_schema_version // "nil"),input_events_enabled=\\(.features.input_events_v1.enabled // "nil"),pane_input_events=\\(.endpoints.pane_input_events // "nil"),max_batch=\\(.features.input_events_v1.max_batch // "nil"),supports_repeat=\\(.features.input_events_v1.supports_repeat // "nil")"' 2>/dev/null || true)"
             if [ -n "$SUMMARY" ]; then
               echo "$SUMMARY"
               return 0

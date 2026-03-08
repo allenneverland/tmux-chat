@@ -36,11 +36,10 @@ struct ServerDetailView: View {
             }
 
             Section("Input") {
-                NavigationLink {
-                    ShortcutSettingsView()
-                } label: {
-                    Label("Shortcut Settings", systemImage: "keyboard")
-                }
+                Label("Blink-style shortcut bar is enabled", systemImage: "keyboard")
+                Text("Custom shortcut groups were removed. Layout now follows locale and device defaults.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Maintenance") {

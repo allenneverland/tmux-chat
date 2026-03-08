@@ -49,12 +49,47 @@ struct SendInputRequest: Codable {
     let text: String
 }
 
-struct SendKeyRequest: Codable {
-    let key: String
+enum InputEventAction: String, Codable, Hashable {
+    case press
+    case repeatAction = "repeat"
 }
 
-struct SendKeysRequest: Codable {
-    let keys: [String]
+enum InputEventSource: String, Codable, Hashable {
+    case softwareBar = "software_bar"
+    case hardwareKeyboard = "hardware_keyboard"
+}
+
+struct InputEventModifiers: Codable, Hashable {
+    var ctrl: Bool
+    var alt: Bool
+    var shift: Bool
+    var meta: Bool
+
+    static let none = InputEventModifiers(ctrl: false, alt: false, shift: false, meta: false)
+}
+
+struct InputEvent: Codable, Hashable {
+    let action: InputEventAction
+    let key: String
+    let code: String
+    let modifiers: InputEventModifiers
+    let text: String?
+    let source: InputEventSource
+    let timestampMs: UInt64
+
+    enum CodingKeys: String, CodingKey {
+        case action
+        case key
+        case code
+        case modifiers
+        case text
+        case source
+        case timestampMs = "timestamp_ms"
+    }
+}
+
+struct InputEventBatchRequest: Codable {
+    let events: [InputEvent]
 }
 
 struct RegisterDeviceRequest: Codable {
@@ -160,9 +195,7 @@ struct DaemonEndpointCapabilities: Codable {
     let diagnostics: Bool
     let sessions: Bool
     let panes: Bool
-    let paneKey: Bool?
-    let paneKeys: Bool?
-    let paneKeyProbe: Bool?
+    let paneInputEvents: Bool?
     let notify: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -171,56 +204,61 @@ struct DaemonEndpointCapabilities: Codable {
         case diagnostics
         case sessions
         case panes
-        case paneKey = "pane_key"
-        case paneKeys = "pane_keys"
-        case paneKeyProbe = "pane_key_probe"
+        case paneInputEvents = "pane_input_events"
         case notify
     }
 }
 
-struct DaemonFeatureCapabilities: Codable {
-    let shortcutKeys: Bool?
-    let shortcutKeyBatch: Bool?
+struct DaemonInputEventsCapabilities: Codable {
+    let enabled: Bool
+    let maxBatch: Int
+    let supportsRepeat: Bool
 
     enum CodingKeys: String, CodingKey {
-        case shortcutKeys = "shortcut_keys"
-        case shortcutKeyBatch = "shortcut_key_batch"
+        case enabled
+        case maxBatch = "max_batch"
+        case supportsRepeat = "supports_repeat"
     }
 }
 
-enum DaemonShortcutKeysSupport: Equatable {
+struct DaemonFeatureCapabilities: Codable {
+    let inputEventsV1: DaemonInputEventsCapabilities?
+
+    enum CodingKeys: String, CodingKey {
+        case inputEventsV1 = "input_events_v1"
+    }
+}
+
+enum DaemonInputEventsSupport: Equatable {
     case supported
     case unsupported
     case unknown
 }
 
 extension DaemonCapabilitiesResponse {
-    var supportsRequiredShortcutContract: Bool {
-        (capabilitiesSchemaVersion ?? 0) >= 3 &&
-            features?.shortcutKeys == true &&
-            endpoints.paneKey == true &&
-            endpoints.paneKeyProbe == true
+    var supportsInputEventsContract: Bool {
+        (capabilitiesSchemaVersion ?? 0) >= 5 &&
+            features?.inputEventsV1?.enabled == true &&
+            endpoints.paneInputEvents == true
     }
 
-    var supportsShortcutBatchContract: Bool {
-        (capabilitiesSchemaVersion ?? 0) >= 4 &&
-            features?.shortcutKeyBatch == true &&
-            endpoints.paneKeys == true &&
-            endpoints.paneKey == true
+    var maxInputEventsBatch: Int {
+        max(1, min(features?.inputEventsV1?.maxBatch ?? 32, 128))
     }
 
-    var shortcutKeysSupport: DaemonShortcutKeysSupport {
-        if supportsRequiredShortcutContract {
+    var supportsInputEventsRepeat: Bool {
+        features?.inputEventsV1?.supportsRepeat == true
+    }
+
+    var inputEventsSupport: DaemonInputEventsSupport {
+        if supportsInputEventsContract {
             return .supported
         }
-        if let shortcutKeys = features?.shortcutKeys {
-            return shortcutKeys ? .supported : .unsupported
+        if let featureEnabled = features?.inputEventsV1?.enabled {
+            return featureEnabled ? .supported : .unsupported
         }
-        if let paneKey = endpoints.paneKey {
-            return paneKey ? .supported : .unsupported
-        }
-        if let paneKeyProbe = endpoints.paneKeyProbe {
-            return paneKeyProbe ? .supported : .unsupported
+        if let endpointEnabled = endpoints.paneInputEvents {
+            return endpointEnabled ? .supported : .unsupported
         }
         return .unknown
     }

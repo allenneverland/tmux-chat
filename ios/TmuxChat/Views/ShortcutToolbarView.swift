@@ -1,56 +1,34 @@
 import SwiftUI
-import UIKit
 
 struct ShortcutToolbarView: View {
-    @State private var layoutManager = ShortcutLayoutManager.shared
+    let layout: ShortcutToolbarLayout
+    let modifierState: ShortcutModifierStateMachine
+    var onItemTapped: (ShortcutToolbarItem) -> Void
 
-    var pendingModifiers: Set<ShortcutModifier>
-    var onKeyTapped: (ShortcutItem) -> Void
-    private let swipeThreshold: CGFloat = 28
-
-    private var canSwitchGroups: Bool {
-        layoutManager.groups.count > 1
+    private func modifierStateColor(_ state: ShortcutModifierActivationState) -> Color {
+        switch state {
+        case .off:
+            return Color(.secondarySystemBackground)
+        case .oneShot:
+            return .blue.opacity(0.25)
+        case .locked:
+            return .blue
+        }
     }
 
-    private var pendingModifierLabel: String {
-        ShortcutModifier.allCases
-            .filter { pendingModifiers.contains($0) }
-            .map(\.displayName)
-            .joined(separator: "+")
-    }
-
-    private func isModifierHighlighted(_ item: ShortcutItem) -> Bool {
-        guard let modifierOnly = item.modifierOnly else {
-            return false
+    private func labelColor(for state: ShortcutModifierActivationState) -> Color {
+        switch state {
+        case .locked:
+            return .white
+        case .off, .oneShot:
+            return .primary
         }
-        return pendingModifiers.contains(modifierOnly)
-    }
-
-    private func handleSwipe(_ value: DragGesture.Value) {
-        guard canSwitchGroups else {
-            return
-        }
-
-        let horizontal = abs(value.translation.width)
-        let vertical = abs(value.translation.height)
-        guard vertical > horizontal, vertical >= swipeThreshold else {
-            return
-        }
-
-        if value.translation.height < 0 {
-            layoutManager.selectNextGroup()
-        } else {
-            layoutManager.selectPreviousGroup()
-        }
-
-        let feedback = UIImpactFeedbackGenerator(style: .light)
-        feedback.impactOccurred()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !pendingModifiers.isEmpty {
-                Text("Pending: \(pendingModifierLabel)")
+            if modifierState.hasActiveModifiers {
+                Text("Pending: \(modifierState.activeModifiersLabel)")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
@@ -58,34 +36,42 @@ struct ShortcutToolbarView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(layoutManager.selectedGroupItems) { item in
-                        let highlighted = isModifierHighlighted(item)
+                    ForEach(layout.items) { item in
                         Button {
-                            onKeyTapped(item)
+                            onItemTapped(item)
                         } label: {
-                            Text(item.displayLabel)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(highlighted ? Color.white : Color.primary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(
-                                    Capsule()
-                                        .fill(highlighted ? Color.accentColor : Color(.secondarySystemBackground))
-                                )
+                            switch item.kind {
+                            case .modifier(let modifier):
+                                let state = modifierState.state(for: modifier)
+                                Text(item.label)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(labelColor(for: state))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .frame(minHeight: 44)
+                                    .background(
+                                        Capsule().fill(modifierStateColor(state))
+                                    )
+                            case .key:
+                                Text(item.label)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .frame(minHeight: 44)
+                                    .background(
+                                        Capsule().fill(Color(.secondarySystemBackground))
+                                    )
+                            }
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal)
             }
         }
-        .padding(.horizontal)
         .padding(.vertical, 6)
         .background(.bar)
         .accessibilityLabel("Shortcut toolbar")
-        .accessibilityHint(canSwitchGroups ? "Swipe up or down to switch shortcut groups." : "")
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 20)
-                .onEnded(handleSwipe)
-        )
     }
 }
