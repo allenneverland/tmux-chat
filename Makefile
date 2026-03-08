@@ -22,7 +22,8 @@ PUSH_SERVER_BASE_URL ?= http://127.0.0.1:8790
 PUSH_SERVER_COMPAT_NOTIFY_TOKEN ?=
 CONTROL_PLANE_BASE_URL ?= http://127.0.0.1:8787
 CONTROL_PLANE_TOKEN ?=
-SHORTCUT_PROBE_TARGET ?= shortcut-probe
+SHORTCUT_PROBE_TARGET ?= input-probe
+INPUT_EVENTS_PROBE_TARGET ?= $(SHORTCUT_PROBE_TARGET)
 
 # Include local config if exists
 -include config.local.mk
@@ -185,23 +186,32 @@ tailscale-only-init:
 	@PUSH_SERVER_ENV_FILE="$(PUSH_SERVER_ENV_FILE)" \
 		ops/deploy/tailscale-only-init.sh
 
-# Validate control-plane contract (schema v3 + shortcut probe route).
+# Validate control-plane contract (schema v5 + input-events probe route).
 control-plane-smoke:
 	@test -n "$(CONTROL_PLANE_TOKEN)" || (echo "CONTROL_PLANE_TOKEN is required"; exit 1)
 	@echo "Checking healthz..."
 	@curl -fsS "$(CONTROL_PLANE_BASE_URL)/healthz" >/dev/null
 	@echo "Checking capabilities schema..."
 	@curl -fsS "$(CONTROL_PLANE_BASE_URL)/capabilities" \
-		| jq -e '.capabilities_schema_version >= 3 and .features.shortcut_keys == true and .endpoints.pane_key == true and .endpoints.pane_key_probe == true' >/dev/null
+		| jq -e '.capabilities_schema_version >= 5 and .features.input_events_v1.enabled == true and (.features.input_events_v1.max_batch // 0) >= 1 and .features.input_events_v1.supports_repeat == true and .endpoints.pane_input_events == true' >/dev/null
 	@echo "Checking diagnostics auth..."
 	@curl -fsS -H "Authorization: Bearer $(CONTROL_PLANE_TOKEN)" \
 		"$(CONTROL_PLANE_BASE_URL)/diagnostics" >/dev/null
-	@echo "Checking shortcut probe route..."
+	@echo "Checking input-events probe route..."
 	@status=$$(curl -sS -o /dev/null -w "%{http_code}" \
 		-X POST \
 		-H "Authorization: Bearer $(CONTROL_PLANE_TOKEN)" \
-		-H "Content-Type: application/json" \
-		"$(CONTROL_PLANE_BASE_URL)/panes/$(SHORTCUT_PROBE_TARGET)/key?probe=true" \
-		-d '{"key":"Enter"}'); \
-		test "$$status" = "204" || (echo "shortcut probe failed with HTTP $$status"; exit 1)
+		"$(CONTROL_PLANE_BASE_URL)/panes/$(INPUT_EVENTS_PROBE_TARGET)/input-events?probe=true"); \
+		test "$$status" = "204" || (echo "input-events probe failed with HTTP $$status"; exit 1)
+	@echo "Checking legacy /key route retirement..."
+	@legacy_body=$$(mktemp); \
+		status=$$(curl -sS -o "$$legacy_body" -w "%{http_code}" \
+			-X POST \
+			-H "Authorization: Bearer $(CONTROL_PLANE_TOKEN)" \
+			-H "Content-Type: application/json" \
+			"$(CONTROL_PLANE_BASE_URL)/panes/$(INPUT_EVENTS_PROBE_TARGET)/key?probe=true" \
+			-d '{"key":"Enter"}'); \
+		test "$$status" = "410" || (cat "$$legacy_body"; rm -f "$$legacy_body"; echo "legacy /key probe expected 410, got $$status"; exit 1); \
+		jq -e '.code == "shortcut_contract_removed"' "$$legacy_body" >/dev/null || (cat "$$legacy_body"; rm -f "$$legacy_body"; echo "legacy /key probe response code mismatch"; exit 1); \
+		rm -f "$$legacy_body"
 	@echo "Control-plane smoke check passed."

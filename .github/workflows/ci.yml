@@ -108,9 +108,13 @@ jobs:
           CONTROL_TOKEN="$(TMUX_CHATD_DATA_DIR="$DATA_DIR" ./target/debug/tmux-chatd devices issue --name ci-smoke --json | jq -r '.device_token')"
           test -n "$CONTROL_TOKEN"
 
-          make control-plane-smoke \
+          if ! make control-plane-smoke \
             CONTROL_PLANE_BASE_URL="http://127.0.0.1:${PORT}" \
-            CONTROL_PLANE_TOKEN="$CONTROL_TOKEN"
+            CONTROL_PLANE_TOKEN="$CONTROL_TOKEN"; then
+            echo "::error::control-plane smoke failed"
+            cat "$DATA_DIR/tmux-chatd.log" || true
+            exit 1
+          fi
 
   push-server-docker:
     name: Push Server (Docker)
