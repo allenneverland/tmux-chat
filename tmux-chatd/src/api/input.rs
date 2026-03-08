@@ -180,7 +180,10 @@ fn resolve_named_base_key(key: &str) -> Option<String> {
         return Some(mapped.to_string());
     }
 
-    if let Some(number) = key.strip_prefix('F').and_then(|value| value.parse::<u8>().ok()) {
+    if let Some(number) = key
+        .strip_prefix('F')
+        .and_then(|value| value.parse::<u8>().ok())
+    {
         if (1..=24).contains(&number) {
             return Some(format!("F{number}"));
         }
@@ -317,8 +320,7 @@ pub async fn send_input_events(
 
     let mut tokens = Vec::with_capacity(payload.events.len());
     for (index, event) in payload.events.iter().enumerate() {
-        validate_input_event(event)
-            .map_err(|message| invalid_input_event_error(index, message))?;
+        validate_input_event(event).map_err(|message| invalid_input_event_error(index, message))?;
         let token = input_event_to_tmux_token(event)
             .map_err(|message| unsupported_input_event_error(index, message))?;
         tokens.push(token);
@@ -475,8 +477,7 @@ mod tests {
         let uri: Uri = "/panes/dev:0.0/input-events?probe=true"
             .parse()
             .expect("valid probe=true URI");
-        let query =
-            Query::<InputEventsQuery>::try_from_uri(&uri).expect("probe=true should parse");
+        let query = Query::<InputEventsQuery>::try_from_uri(&uri).expect("probe=true should parse");
         assert!(matches!(query.0.probe, Some(true)));
     }
 
